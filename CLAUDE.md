@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ライセンス**: MIT (Copyright 2025 Shimae)
 
-**プロジェクト状態**: **Phase 2実装完了** ✅
+**プロジェクト状態**: **Phase 2実装完了 + テストフレームワーク導入完了** ✅
 
 **重要**: 開発チームは日本人で構成されているため、**すべてのドキュメント・コメント・会話は日本語で行うこと**。これは認知負荷軽減のための最重要指示です。
 
@@ -170,11 +170,18 @@ init-project-by-claude/
 │       └── constants.py   # 艦船パラメータ・定数定義
 ├── examples/              # サンプルシミュレーション
 │   ├── basic_combat.py    # Phase 1: 基本戦闘デモ
-│   └── resource_combat.py # Phase 2: 資源管理デモ
-├── tests/                 # テストコード（現在は手動テストのみ）
+│   ├── resource_combat.py # Phase 2: 資源管理デモ
+│   └── README.md          # デモプログラム説明書
+├── tests/                 # テストコード（pytest）
+│   ├── unit/              # 単体テスト（77テスト・100%合格）
+│   ├── integration/       # 統合テスト
+│   ├── fixtures/          # テストフィクスチャ
+│   └── README.md          # テスト実行ガイド
 ├── docs/                  # 設計ドキュメント（日本語）
 │   ├── 001-project-plan/  # プロジェクト計画
-│   └── 002-world-concept/ # 世界設定
+│   ├── 002-world-concept/ # 世界設定
+│   └── README.md          # ドキュメント構成ガイド
+├── pytest.ini             # pytest設定
 ├── pyproject.toml         # 依存関係管理（uv）
 └── README.md              # プロジェクト概要
 ```
@@ -204,14 +211,31 @@ uv run python examples/basic_combat.py
 uv run python examples/resource_combat.py
 ```
 
-### テスト実行（Phase 3以降で導入予定）
+### テスト実行
 
 ```bash
-# 現在はpytestフレームワーク未導入
-# Phase 3で以下のコマンドを実装予定：
-# pytest tests/
-# pytest tests/unit/test_combat.py -v
-# pytest --cov=src tests/
+# 全単体テスト実行（77テスト）
+uv run pytest tests/unit/
+
+# 詳細出力付き実行
+uv run pytest tests/unit/ -v
+
+# 特定のテストファイルを実行
+uv run pytest tests/unit/test_combat.py
+
+# 特定のテストクラスを実行
+uv run pytest tests/unit/test_ship.py::TestShipCreation
+
+# カバレッジレポート生成
+uv run pytest --cov=src tests/
+
+# HTMLカバレッジレポート生成
+uv run pytest --cov=src --cov-report=html tests/
+
+# マーカー別実行
+uv run pytest -m unit          # 単体テストのみ
+uv run pytest -m integration   # 統合テストのみ
+uv run pytest -m "not slow"    # 時間がかかるテストを除外
 ```
 
 ---
@@ -415,12 +439,15 @@ def _should_end_battle(fleet_a: Fleet, fleet_b: Fleet) -> bool:
 
 ## 次のClaude Instanceへの指示
 
-### 現在の状態（2025-10-19時点）
+### 現在の状態（2025-10-20時点）
 
 - **Phase 1完了**: 基本戦闘システム実装済み
 - **Phase 2完了**: 資源管理システム実装済み
+- **テストフレームワーク完了**: pytest導入、77/77単体テスト合格（100%）
+- **ドキュメント完備**: README.md × 4（メイン・tests・examples・docs）
 - **Branch**: `feature/init-project` → `main` へのマージ待ち
 - **実行可能**: `examples/basic_combat.py`, `examples/resource_combat.py`
+- **テスト実行可能**: `uv run pytest tests/unit/` で全77テスト実行
 
 ### Phase 3開始時の最初のタスク
 
@@ -472,31 +499,28 @@ def _should_end_battle(fleet_a: Fleet, fleet_b: Fleet) -> bool:
 - [ ] 艦隊が星系間を移動し、移動中に燃料を消費する
 - [ ] 国家AIが並列で動作し、艦隊建造・資源配分を自律的に決定する
 - [ ] 経済システムが循環し、GDP・産業指数が動的に変化する
+- [ ] 統合テストが全て合格する
 
-### テスト戦略（Phase 3で導入）
+### テスト戦略（既存テストの拡張）
 
+**現在のテスト状況**:
+- ✅ 単体テスト: 77/77合格（100%）
+- ✅ テストフィクスチャ: 完備
+- ✅ pytest設定: 完了
+- ⏳ 統合テスト: 一部実装（Phase 3で拡張）
+
+**Phase 3で追加するテスト**:
 ```bash
-# pytest フレームワーク導入
-uv add --dev pytest pytest-cov
+# 新規テストファイル作成予定
+tests/unit/test_transport.py      # 輸送システムテスト
+tests/unit/test_navigation.py     # 星系間移動テスト
+tests/unit/test_nation_ai.py      # 国家AIテスト
+tests/integration/test_transport_flow.py  # 輸送フロー統合テスト
 
-# テストディレクトリ構成
-tests/
-├── unit/
-│   ├── test_ship.py          # 艦船クラス単体テスト
-│   ├── test_fleet.py         # 艦隊クラス単体テスト
-│   ├── test_combat.py        # 戦闘解決ロジックテスト
-│   └── test_resources.py     # 資源管理テスト
-├── integration/
-│   ├── test_basic_combat.py  # 戦闘統合テスト
-│   ├── test_resource_flow.py # 資源フロー統合テスト
-│   └── test_transport.py     # 輸送システム統合テスト
-└── fixtures/
-    └── scenarios.py          # テストシナリオ定義
-
-# テスト実行
-pytest tests/
-pytest tests/unit/test_combat.py::test_damage_calculation -v
-pytest --cov=src --cov-report=html tests/
+# テスト実行（Phase 3）
+uv run pytest tests/unit/test_transport.py -v
+uv run pytest tests/integration/ -v
+uv run pytest --cov=src --cov-report=html tests/
 ```
 
 ---
@@ -508,6 +532,8 @@ pytest --cov=src --cov-report=html tests/
 - **Python 3.12+**: メイン言語
 - **NumPy 2.3.4+**: 決定論的乱数生成（PCG64）
 - **uv**: パッケージ管理・仮想環境管理
+- **pytest 8.4.2**: テストフレームワーク
+- **pytest-cov 7.0.0**: カバレッジ測定
 
 ### Phase 3以降で導入予定
 
@@ -593,9 +619,12 @@ pytest --cov=src --cov-report=html tests/
 
 すべてMermaid図付きで詳細に記述されています。
 
-### README.md
+### README.md関連
 
-Phase 1-2の実装詳細、実行方法、アーキテクチャ解説が記載されています。
+- **メインREADME.md**: Phase 1-2の実装詳細、実行方法、アーキテクチャ解説、テストカバレッジ
+- **tests/README.md**: テストフレームワーク完全ガイド、実行方法、フィクスチャ説明
+- **examples/README.md**: サンプルプログラム説明、カスタムシナリオ作成方法
+- **docs/README.md**: ドキュメント構成ガイド、開発者向け・プランナー向け使い方
 
 ---
 
@@ -632,6 +661,74 @@ print(f"Planet stock: Fuel={planet.fuel_stock}kg, Ammo={planet.ammo_stock} round
 
 ---
 
-**Last Updated**: 2025-10-19
-**Status**: Phase 2 Complete ✅
+---
+
+## テストAPI仕様（重要）
+
+**Phase 2でのテスト実装により判明した正確なAPI仕様**:
+
+### Ship初期化
+```python
+# 正しい順序: ship_id, ship_class, name
+Ship(1, "destroyer", "Destroyer-1")
+
+# 間違い（古い仕様）: ship_id, name, ship_class, position
+# Ship(1, "Destroyer-1", "destroyer", (0.0, 0.0, 0.0))  # エラー
+```
+
+### Fleet初期化
+```python
+# shipsパラメータは必須
+Fleet(1, "Fleet-A", (0.0, 0.0, 0.0), ships=[])
+
+# 間違い: shipsパラメータなし
+# Fleet(1, "Fleet-A", (0.0, 0.0, 0.0))  # エラー
+```
+
+### Fleetメソッド
+```python
+# 利用可能なメソッド
+fleet.get_alive_ships()  # 生存艦船リスト取得
+fleet.is_destroyed()     # 全滅判定
+fleet.total_fuel()       # 総燃料
+fleet.total_ammo()       # 総弾薬
+fleet.can_fight()        # 戦闘可能判定
+
+# 利用不可（存在しないメソッド）
+# fleet.add_ship(ship)   # エラー（直接ships.append()を使用）
+# fleet.count_alive()    # エラー（len(get_alive_ships())を使用）
+```
+
+### StarSystem属性
+```python
+# 正しい属性名
+star_system.fleets_present  # 存在する艦隊リスト
+
+# 間違い（古い属性名）
+# star_system.fleets  # エラー
+```
+
+### CombatResolver戻り値
+```python
+# _calculate_damage() は int を返す（tupleではない）
+damage = resolver._calculate_damage(attacker, defender)  # int
+
+# 間違い（古い仕様）
+# damage, hit = resolver._calculate_damage(attacker, defender)  # エラー
+```
+
+### Ship能力判定
+```python
+# 正しいメソッド名
+ship.can_shoot()  # 射撃可能判定（弾薬チェック）
+
+# 間違い（存在しないメソッド）
+# ship.can_fire()  # エラー
+```
+
+---
+
+**Last Updated**: 2025-10-20
+**Status**: Phase 2 Complete + Test Framework Complete ✅
+**Test Status**: 77/77 Unit Tests Passing (100%)
 **Next Milestone**: Phase 3 - SimPy輸送システム、星系間移動、国家AI（Ray）
