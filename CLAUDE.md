@@ -6,13 +6,66 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Omni Simulation Project** は、銀河規模の複雑系シミュレーションシステムです。艦隊戦闘、国家経済、惑星開発、輸送網、人口動態を統合的にモデル化します。
 
-**開発言語**: Python（大規模シミュレーション向けの階層型並列処理に最適）
+**開発言語**: Python 3.12以上
+
+**パッケージマネージャー**: uv
 
 **ライセンス**: MIT (Copyright 2025 Shimae)
 
-**プロジェクト状態**: 設計完了・実装準備段階
+**プロジェクト状態**: **Phase 2実装完了** ✅
 
 **重要**: 開発チームは日本人で構成されているため、**すべてのドキュメント・コメント・会話は日本語で行うこと**。これは認知負荷軽減のための最重要指示です。
+
+---
+
+## 現在の実装状況（Phase 2完了）
+
+### Phase 1: 基本戦闘システム ✅ 完了
+
+- **イベント駆動型シミュレーション**: 優先度付きキューによる時系列イベント処理
+- **艦隊・艦船システム**: 駆逐艦・巡洋艦・戦艦の3クラス
+- **索敵システム**: 艦隊間の距離判定による敵艦隊発見
+- **戦闘解決システム**: ターン制戦闘、ダメージ計算、艦船撃破判定
+- **決定論的乱数生成**: シード固定による再現可能なシミュレーション（NumPy PCG64）
+- **コンソール出力**: 戦闘経過と最終結果の詳細表示
+
+**実装ファイル**:
+- `src/core/scheduler.py`: イベントスケジューラー（heapq優先度キュー）
+- `src/core/simulation.py`: シミュレーションコントローラー
+- `src/entities/ship.py`: 艦船エンティティ（HP・攻撃力・防御力）
+- `src/entities/fleet.py`: 艦隊エンティティ（複数艦船の管理）
+- `src/events/base.py`: イベント基底クラス
+- `src/events/detection.py`: 索敵イベント
+- `src/events/combat.py`: 戦闘イベント
+- `src/combat/resolver.py`: 戦闘解決ロジック（ダメージ計算）
+- `src/utils/rng.py`: 決定論的乱数生成（PCG64）
+- `src/utils/geometry.py`: 座標計算（距離判定）
+- `src/config/constants.py`: 艦船パラメータ・定数定義
+
+### Phase 2: 資源管理システム ✅ 完了
+
+- **燃料・弾薬パラメータ**: 各艦船が燃料（kg）と弾薬（rounds）を保持
+- **資源消費システム**:
+  - 戦闘時の弾薬消費（攻撃ごとに消費）
+  - 毎tickの燃料消費（固定レート）
+- **惑星システム**: 資源産出と備蓄管理（簡易版・固定値産出）
+- **補給システム**: 惑星から艦隊への即座補給（ResupplyEvent）
+- **戦闘継続判定**: 弾薬枯渇時の戦闘不能判定
+- **System層導入**: データとロジックの分離（ECS準備）
+  - ResourceSystem: 惑星の資源産出管理
+  - FleetSystem: 艦隊の燃料消費管理
+
+**追加実装ファイル**:
+- `src/entities/planet.py`: 惑星エンティティ（資源産出・備蓄）
+- `src/entities/star_system.py`: 星系エンティティ（惑星・艦隊の管理）
+- `src/systems/resource_system.py`: 資源産出System
+- `src/systems/fleet_system.py`: 艦隊燃料消費System
+- `src/events/resupply.py`: 補給イベント
+
+**Phase 2での主要な設計判断**:
+1. **即座補給**: 輸送時間なし（Phase 3でSimPy輸送システム追加予定）
+2. **固定値産出**: 惑星資源は枯渇しない（Phase 3で動的資源管理追加予定）
+3. **System層パターン**: OOPエンティティ + Systemロジックのハイブリッド（段階的ECS移行）
 
 ---
 
@@ -24,269 +77,473 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 ┌────────────────────────────┐
-│ 銀河層 (静的Graph)          │ ← NetworkX (年単位更新)
+│ 銀河層 (静的Graph)          │ ← NetworkX (年単位更新) [Phase 4]
 ├────────────────────────────┤
-│ 国家層 (並列Actor)          │ ← Ray.remote (週単位更新)
+│ 国家層 (並列Actor)          │ ← Ray.remote (週単位更新) [Phase 3]
 ├────────────────────────────┤
-│ 艦隊層 (ECS更新)           │ ← NumPy/Numba (毎tick更新)
+│ 艦隊層 (ECS更新)           │ ← NumPy/Numba (毎tick更新) [Phase 1-2実装済]
 ├────────────────────────────┤
-│ 輸送層 (離散イベント)       │ ← SimPy (イベント駆動)
+│ 輸送層 (離散イベント)       │ ← SimPy (イベント駆動) [Phase 3]
 ├────────────────────────────┤
-│ 人口層 (統計近似)          │ ← NumPy配列 (月単位更新)
+│ 人口層 (統計近似)          │ ← NumPy配列 (月単位更新) [Phase 4]
 └────────────────────────────┘
 ```
 
-**設計原則**: 「粗粒度はActor、細粒度はECS、さらに細かい層は統計近似」
+**現在の状態**: 艦隊層（Phase 1-2）は実装完了。イベント駆動システムとSystem層パターンが導入済み。
 
-### 技術スタック決定根拠
+### イベント駆動アーキテクチャ（Phase 1-2実装済）
 
-| 階層   | 技術選定                | 理由                                     |
-| ------ | ----------------------- | ---------------------------------------- |
-| 銀河層 | NetworkX, NumPy         | 航路と星系間距離をキャッシュ保持         |
-| 国家層 | Ray (`@ray.remote`)     | 国家ごとにAIを独立スレッド化で並列処理   |
-| 艦隊層 | NumPy + Numba           | 大量の艦隊を一括ベクトル更新（SIMD対応） |
-| 輸送層 | SimPy                   | 到着時のみ更新でCPU削減                  |
-| 人口層 | NumPy配列 or pandas     | 統計的集約更新で計算量削減               |
+シミュレーションはイベントスケジューラーによって時系列順に実行されます：
 
-### 時間解像度の分離（重要）
+```python
+# src/core/scheduler.py
+class EventScheduler:
+    def __init__(self):
+        self.event_queue = []  # heapq優先度キュー
 
-**全層を毎tick更新しない** - 更新頻度を分離することで劇的な高速化を実現：
+    def schedule(self, event: Event):
+        heapq.heappush(self.event_queue, (event.tick, event.priority, event))
 
-| 層     | 時間解像度   | 更新間隔      | 例                     |
-| ------ | ------------ | ------------- | ---------------------- |
-| 銀河層 | 年単位       | 1000tickに1回 | 航路変動や星系滅亡など |
-| 国家層 | 週単位       | 7tickに1回    | 政策変更、外交         |
-| 艦隊層 | 日単位       | 毎tick        | 航行・戦闘             |
-| 輸送層 | イベント単位 | イベント時    | 輸送完了時のみ         |
-| 人口層 | 月単位       | 30tickに1回   | 成長率・労働力変化     |
+    def run_until(self, max_tick: int):
+        while self.event_queue and current_tick < max_tick:
+            tick, priority, event = heapq.heappop(self.event_queue)
+            event.execute(self)
+```
 
-→ この設計により、**1日で数十年分**のシミュレーションが可能
+**イベント優先度**:
+1. **DetectionEvent** (priority=0): 索敵判定
+2. **CombatEvent** (priority=1): 戦闘ラウンド
+3. **ResupplyEvent** (priority=2): 補給処理
 
----
+### System層パターン（Phase 2導入）
 
-## ドメインモデル（階層別）
+データ（Entities）とロジック（Systems）を分離するパターンを導入。完全なECSへの段階的移行を目指します。
 
-### 銀河層（Galaxy Layer）
-- **データ構造**: Adjacency matrix / CSR graph
-- **主要パラメータ**: 星系座標(x,y,z), 接続星系リスト, 環境パラメータ(密度/放射線/不安定性)
-- **更新頻度**: 年単位（1000tickに1回）
-- **実装**: NetworkX + NumPyでキャッシュ化
+```python
+# src/systems/resource_system.py
+class ResourceSystem:
+    """惑星の資源産出を一括管理"""
+    def update(self, planets: List[Planet], tick: int):
+        for planet in planets:
+            planet.produce_resources()
 
-### 国家層（Nation Layer）
-- **データ構造**: Dataclass or Pydantic model
-- **主要パラメータ**:
-  - 政治: 政体、安定度、正統性
-  - 経済: GDP、産業指数、技術水準、資源在庫
-  - 軍事: 艦隊数、動員率、ドクトリン
-  - 外交: 関係値、同盟、条約
-- **更新頻度**: 週単位（7tickに1回）
-- **実装**: Ray Actorで国家ごとに並列AI実行
+# src/systems/fleet_system.py
+class FleetSystem:
+    """艦隊の燃料消費を一括管理"""
+    def update_consumption(self, fleets: List[Fleet], tick: int):
+        for fleet in fleets:
+            for ship in fleet.get_alive_ships():
+                ship.consume_fuel(ship.fuel_consumption_rate)
+```
 
-### 艦隊層（Fleet Layer）
-- **データ構造**: NumPy structured array（SIMD対応）
-- **主要パラメータ**:
-  - 戦闘: 攻撃力、防御力、耐久、機動性
-  - 状態: 燃料、士気、練度、損傷度
-  - 位置: 星系ID、座標(x,y,z)
-- **更新頻度**: 毎tick（日単位）
-- **実装**: NumPy/Numbaで一括ベクトル更新、ECSパターン
-
-### 輸送層（Transport Layer）
-- **データ構造**: PriorityQueue (SimPyイベントキュー)
-- **主要パラメータ**: 出発地、目的地、積載物種別、到着予定時刻、リスク値
-- **更新頻度**: イベント発生時のみ
-- **実装**: SimPyの離散イベントシミュレーション
-
-### 人口層（Population Layer）
-- **データ構造**: Dense array (NumPy)
-- **主要パラメータ**: 総人口、職業分布(労働者/科学者/軍人)、幸福度、教育水準、出生率/死亡率
-- **更新頻度**: 月単位（30tickに1回）
-- **実装**: 統計的集約更新、都市単位で代表値
+**System統合箇所**: `src/core/simulation.py`のメインループで毎tick呼び出し
 
 ---
 
-## 開発フェーズ
-
-### Phase 1: 艦隊戦闘コア実装
-- **目標**: 2艦隊の索敵・移動・交戦シミュレーション
-- **実装範囲**:
-  - NumPy配列ベースの艦隊エンティティ
-  - 離散イベント駆動の戦闘解決
-  - 疑似乱数シード固定による再現性確保
-- **成功基準**: 同一シードで同一結果が得られる2艦隊戦闘
-
-### Phase 2: 資源・輸送レイヤー統合
-- **目標**: 艦隊の継戦能力を資源で制約
-- **実装範囲**:
-  - SimPyによる輸送イベントシステム
-  - 燃料・弾薬消費と補給線
-  - 惑星-艦隊間の資源フロー
-- **成功基準**: 補給線が切れた艦隊が作戦継続不能になる
-
-### Phase 3: 国家AIと経済システム
-- **目標**: 国家レベルの意思決定と経済循環
-- **実装範囲**:
-  - Ray Actorによる並列国家AI
-  - GDP・産業・技術の動的変化
-  - 外交関係と同盟システム
-- **成功基準**: 複数国家が並列で自律行動し、経済が循環する
-
-### Phase 4: 人口動態と最適化
-- **目標**: 大規模シミュレーションの実現
-- **実装範囲**:
-  - 人口増減の統計モデル
-  - Numba JITによる高速化
-  - 並列実行の最適化
-- **成功基準**: 1000星系・100国家・10000艦隊を1日でシミュレート可能
-
----
-
-## プロジェクト構造
+## ディレクトリ構造
 
 ```
-omni-sim/
-├── docs/                         # 設計ドキュメント（日本語）
-│   └── 001-project-plan/
-│       ├── 001-project-plan.md   # 艦隊戦闘設計
-│       ├── 002-domain-plan.md    # ドメインパラメータ設計
-│       └── 003-solution.md       # 階層別技術選定
+init-project-by-claude/
 ├── src/
-│   ├── layers/                   # 階層別実装
-│   │   ├── galaxy/               # 銀河層（NetworkX）
-│   │   ├── nation/               # 国家層（Ray Actor）
-│   │   ├── fleet/                # 艦隊層（NumPy ECS）
-│   │   ├── transport/            # 輸送層（SimPy）
-│   │   └── population/           # 人口層（統計モデル）
-│   ├── core/                     # シミュレーションエンジン
-│   │   ├── scheduler.py          # 時間ステップ管理
-│   │   ├── coordinator.py        # 階層間調整
-│   │   └── state_manager.py     # 状態保存/復元
-│   ├── ai/                       # 国家AI
-│   │   ├── decision_engine.py
-│   │   └── strategies/
-│   ├── utils/
-│   │   ├── rng.py               # シード固定RNG
-│   │   ├── geometry.py          # 座標計算
-│   │   └── logger.py            # ログシステム
-│   └── config/                  # 設定ファイル
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── fixtures/
-├── examples/                    # サンプルシミュレーション
-│   └── basic_combat.py
-├── pyproject.toml              # 依存関係管理
-├── requirements.txt
-└── README.md
-```
-
----
-
-## コーディング規約とパターン
-
-### 1. NumPy配列による一括更新（艦隊層）
-
-```python
-# 悪い例: ループで個別更新
-for fleet in fleets:
-    fleet.position += fleet.velocity * dt
-
-# 良い例: ベクトル化
-positions += velocities * dt  # NumPy配列演算
-```
-
-### 2. Ray Actorによる国家並列化
-
-```python
-@ray.remote
-class NationAI:
-    def decide_policy(self, state):
-        # 重い思考処理を並列実行
-        return policy
-
-# 使用例
-nations = [NationAI.remote() for _ in range(100)]
-policies = ray.get([n.decide_policy.remote(state) for n in nations])
-```
-
-### 3. SimPyによるイベント駆動輸送
-
-```python
-def transport_process(env, cargo, origin, dest):
-    yield env.timeout(travel_time)  # 到着まで待機
-    dest.receive(cargo)  # 到着時のみ処理
-
-env = simpy.Environment()
-env.process(transport_process(env, cargo, A, B))
-```
-
-### 4. 決定論的乱数生成（再現性確保）
-
-```python
-# 必ずシード固定して初期化
-rng = np.random.Generator(np.random.PCG64(seed=42))
-hit_chance = rng.random()  # 同一シードで同一結果
-```
-
-### 5. 時間解像度の分離
-
-```python
-class Scheduler:
-    def tick(self, current_tick):
-        if current_tick % 1 == 0:      # 毎tick
-            self.update_fleets()
-        if current_tick % 7 == 0:      # 週単位
-            self.update_nations()
-        if current_tick % 30 == 0:     # 月単位
-            self.update_population()
-        if current_tick % 1000 == 0:   # 年単位
-            self.update_galaxy()
-```
-
-### 6. データクラス定義（Pydantic推奨）
-
-```python
-from pydantic import BaseModel
-
-class FleetState(BaseModel):
-    fleet_id: int
-    position: tuple[float, float, float]
-    fuel: float
-    morale: float
-    # 型安全性と自動検証
+│   ├── core/              # シミュレーションコア
+│   │   ├── scheduler.py   # イベントスケジューラー（heapq優先度キュー）
+│   │   └── simulation.py  # シミュレーションコントローラー
+│   ├── entities/          # エンティティ（OOPデータクラス）
+│   │   ├── ship.py        # 艦船（HP・攻撃力・防御力・燃料・弾薬）
+│   │   ├── fleet.py       # 艦隊（艦船リスト・位置・状態）
+│   │   ├── planet.py      # 惑星（資源産出・備蓄）[Phase 2]
+│   │   └── star_system.py # 星系（惑星・艦隊の管理）[Phase 2]
+│   ├── systems/           # System層（ロジック分離）[Phase 2]
+│   │   ├── resource_system.py  # 資源産出管理
+│   │   └── fleet_system.py     # 艦隊燃料消費管理
+│   ├── events/            # イベント定義
+│   │   ├── base.py        # イベント基底クラス
+│   │   ├── detection.py   # 索敵イベント
+│   │   ├── combat.py      # 戦闘イベント
+│   │   └── resupply.py    # 補給イベント [Phase 2]
+│   ├── combat/            # 戦闘解決ロジック
+│   │   └── resolver.py    # ダメージ計算・命中判定
+│   ├── utils/             # ユーティリティ
+│   │   ├── rng.py         # 決定論的乱数生成（NumPy PCG64）
+│   │   └── geometry.py    # 座標計算（距離判定）
+│   └── config/            # 定数・設定
+│       └── constants.py   # 艦船パラメータ・定数定義
+├── examples/              # サンプルシミュレーション
+│   ├── basic_combat.py    # Phase 1: 基本戦闘デモ
+│   └── resource_combat.py # Phase 2: 資源管理デモ
+├── tests/                 # テストコード（現在は手動テストのみ）
+├── docs/                  # 設計ドキュメント（日本語）
+│   ├── 001-project-plan/  # プロジェクト計画
+│   └── 002-world-concept/ # 世界設定
+├── pyproject.toml         # 依存関係管理（uv）
+└── README.md              # プロジェクト概要
 ```
 
 ---
 
 ## 開発コマンド
 
+### 環境セットアップ
+
 ```bash
-# 依存関係インストール
-pip install -r requirements.txt
-# または
-poetry install
+# uvのインストール（未インストールの場合）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# プロジェクトのセットアップ
+cd init-project-by-claude
+uv sync
+```
+
+### シミュレーション実行
+
+```bash
+# Phase 1: 基本戦闘シミュレーション（5隻 vs 6隻）
+uv run python examples/basic_combat.py
+
+# Phase 2: 資源管理を含む戦闘シミュレーション
+uv run python examples/resource_combat.py
+```
+
+### テスト実行（Phase 3以降で導入予定）
+
+```bash
+# 現在はpytestフレームワーク未導入
+# Phase 3で以下のコマンドを実装予定：
+# pytest tests/
+# pytest tests/unit/test_combat.py -v
+# pytest --cov=src tests/
+```
+
+---
+
+## コーディング規約とパターン
+
+### 1. 決定論的乱数生成（必須）
+
+**すべての乱数生成は必ずSeededRNGを使用すること**。同一シードで同一結果を保証します。
+
+```python
+# src/utils/rng.py
+from src.utils.rng import get_rng
+
+rng = get_rng()
+hit_roll = rng.random()  # 0.0～1.0の乱数
+target_index = rng.choice(targets)  # リストからランダム選択
+```
+
+**禁止**: `random.random()`, `random.choice()` など標準ライブラリの使用
+
+### 2. イベント駆動パターン
+
+すべての状態変更はEventを通じて実行します。直接エンティティの状態を変更しないこと。
+
+```python
+# 悪い例: 直接状態変更
+fleet.state = FleetState.ENGAGED
+
+# 良い例: イベント経由で変更
+combat_event = CombatEvent(tick=current_tick, fleet_a=fleet_a, fleet_b=fleet_b)
+scheduler.schedule(combat_event)
+```
+
+### 3. System層パターン（Phase 2導入）
+
+ロジックはSystemクラスに集約し、Entityはデータ保持に専念させます。
+
+```python
+# Entity: データ保持
+class Planet:
+    def __init__(self, fuel_production: float):
+        self.fuel_production = fuel_production
+        self.fuel_stock = fuel_production * 100.0
+
+    def produce_resources(self):
+        self.fuel_stock += self.fuel_production
+
+# System: ロジック実行
+class ResourceSystem:
+    def update(self, planets: List[Planet], tick: int):
+        for planet in planets:
+            planet.produce_resources()  # 全惑星を一括更新
+```
+
+### 4. 型ヒント（必須）
+
+すべての関数に型アノテーションを付与します。
+
+```python
+from typing import List, Tuple, Optional
+
+def calculate_damage(attacker: Ship, defender: Ship) -> int:
+    damage = max(attacker.attack - defender.defense, MIN_DAMAGE)
+    return damage
+
+Position = Tuple[float, float, float]  # 型エイリアス定義
+```
+
+### 5. 日本語コメント（必須）
+
+すべてのdocstring、コメントは日本語で記述します。
+
+```python
+def resolve_combat(attacker: Fleet, defender: Fleet) -> Tuple[int, int]:
+    """
+    戦闘を解決
+
+    Args:
+        attacker: 攻撃側艦隊
+        defender: 防御側艦隊
+
+    Returns:
+        (攻撃側が与えたダメージ, 防御側が与えたダメージ)
+    """
+    # 攻撃側の攻撃処理
+    damage_to_defender = self._attack_fleet(attacker, defender)
+    return (damage_to_defender, damage_to_attacker)
+```
+
+### 6. 定数管理
+
+すべての定数は`src/config/constants.py`で一元管理します。
+
+```python
+# src/config/constants.py
+SHIP_CLASSES = {
+    "destroyer": {
+        "hp": 100,
+        "attack": 20,
+        "defense": 10,
+        "speed": 5.0,
+        "max_fuel": 5000.0,
+        "max_ammo": 200,
+        "fuel_consumption_rate": 10.0,
+        "ammo_per_shot": 1,
+    },
+    # ...
+}
+
+BASE_HIT_RATE = 0.7  # 命中率75%
+MIN_DAMAGE = 5       # 最低ダメージ保証
+FUEL_UNIT = "kg"     # 燃料単位
+AMMO_UNIT = "rounds" # 弾薬単位
+```
+
+---
+
+## 主要なデータフロー
+
+### 戦闘フロー（Phase 1-2）
+
+```
+1. DetectionEvent (tick=1)
+   └─> 艦隊間距離判定
+       └─> 索敵成功 → CombatEvent をスケジュール
+
+2. CombatEvent (tick=2)
+   └─> CombatResolver.resolve_combat()
+       ├─> 攻撃側: 各艦船が弾薬チェック → 弾薬消費 → ダメージ計算
+       ├─> 防御側: 反撃処理
+       └─> 艦船撃破判定
+       └─> 戦闘継続判定（弾薬枯渇/全滅チェック）
+           └─> 継続なら次のCombatEventをスケジュール
+
+3. ResupplyEvent (tick=5)
+   └─> 惑星から艦隊へ資源転送
+       ├─> 惑星備蓄から消費
+       └─> 艦船へ補給
+```
+
+### 資源フロー（Phase 2）
+
+```
+毎tick実行:
+1. ResourceSystem.update()
+   └─> 全惑星が資源産出
+       └─> planet.fuel_stock += planet.fuel_production
+
+2. FleetSystem.update_consumption()
+   └─> 全艦隊の燃料消費
+       └─> ship.fuel -= ship.fuel_consumption_rate
+
+イベント時:
+3. ResupplyEvent.execute()
+   └─> 惑星 → 艦隊への資源転送
+       ├─> planet.consume_fuel(amount)
+       └─> ship.refuel(amount)
+```
+
+---
+
+## 戦闘メカニクス詳細
+
+### ダメージ計算式
+
+```python
+# 命中判定
+hit_roll = rng.random()  # 0.0～1.0
+if hit_roll > BASE_HIT_RATE:  # BASE_HIT_RATE = 0.7 (命中率75%)
+    damage = 0  # 外れ
+else:
+    damage = max(attacker.attack - defender.defense, MIN_DAMAGE)  # MIN_DAMAGE = 5
+```
+
+### 艦船クラスパラメータ
+
+| クラス | HP  | 攻撃力 | 防御力 | 速度 | 最大燃料 | 最大弾薬 | 燃料消費率 | 弾薬消費 |
+| ------ | --- | ------ | ------ | ---- | -------- | -------- | ---------- | -------- |
+| 駆逐艦 | 100 | 20     | 10     | 5.0  | 5000kg   | 200発    | 10kg/tick  | 1発/攻撃 |
+| 巡洋艦 | 200 | 40     | 20     | 3.0  | 20000kg  | 400発    | 20kg/tick  | 2発/攻撃 |
+| 戦艦   | 500 | 100    | 50     | 2.0  | 100000kg | 1000発   | 50kg/tick  | 5発/攻撃 |
+
+### 戦闘終了条件
+
+```python
+# src/core/simulation.py
+def _should_end_battle(fleet_a: Fleet, fleet_b: Fleet) -> bool:
+    # 条件1: どちらかが全滅
+    if fleet_a.is_destroyed() or fleet_b.is_destroyed():
+        return True
+
+    # 条件2: Phase 2追加 - どちらかが弾薬枯渇で戦闘不能
+    if not fleet_a.can_fight() or not fleet_b.can_fight():
+        return True
+
+    return False
+```
+
+---
+
+## 次のClaude Instanceへの指示
+
+### 現在の状態（2025-10-19時点）
+
+- **Phase 1完了**: 基本戦闘システム実装済み
+- **Phase 2完了**: 資源管理システム実装済み
+- **Branch**: `feature/init-project` → `main` へのマージ待ち
+- **実行可能**: `examples/basic_combat.py`, `examples/resource_combat.py`
+
+### Phase 3開始時の最初のタスク
+
+#### 1. SimPy輸送システム実装
+
+```python
+# src/layers/transport/ 新規作成
+# - transport_process.py: SimPyプロセス定義
+# - convoy.py: 輸送船団エンティティ
+# - routing.py: 航路計算
+
+# 実装目標:
+# - 惑星→惑星の資源輸送
+# - 輸送時間の計算（距離ベース）
+# - 輸送リスク（海賊襲撃など）
+```
+
+#### 2. 星系間移動システム
+
+```python
+# src/entities/fleet.py 拡張
+# - set_course(destination: StarSystem): 航路設定
+# - update_travel(dt: float): 移動進捗更新
+# - 星系間ジャンプの実装
+
+# 実装目標:
+# - 艦隊が星系間を移動できる
+# - 移動中の燃料消費
+# - 航路上での遭遇イベント
+```
+
+#### 3. 国家AIと経済システム（Ray導入）
+
+```python
+# src/layers/nation/ 新規作成
+# - nation.py: 国家エンティティ（GDP・産業・技術）
+# - ai.py: Ray Actorによる国家AI
+# - economy.py: 経済循環システム
+
+# 実装目標:
+# - 国家ごとに独立したAIスレッド
+# - 艦隊建造・資源管理・外交の意思決定
+# - Ray.remote での並列実行
+```
+
+### Phase 3成功基準
+
+- [ ] 輸送船団が惑星間を移動し、資源を運搬できる
+- [ ] 艦隊が星系間を移動し、移動中に燃料を消費する
+- [ ] 国家AIが並列で動作し、艦隊建造・資源配分を自律的に決定する
+- [ ] 経済システムが循環し、GDP・産業指数が動的に変化する
+
+### テスト戦略（Phase 3で導入）
+
+```bash
+# pytest フレームワーク導入
+uv add --dev pytest pytest-cov
+
+# テストディレクトリ構成
+tests/
+├── unit/
+│   ├── test_ship.py          # 艦船クラス単体テスト
+│   ├── test_fleet.py         # 艦隊クラス単体テスト
+│   ├── test_combat.py        # 戦闘解決ロジックテスト
+│   └── test_resources.py     # 資源管理テスト
+├── integration/
+│   ├── test_basic_combat.py  # 戦闘統合テスト
+│   ├── test_resource_flow.py # 資源フロー統合テスト
+│   └── test_transport.py     # 輸送システム統合テスト
+└── fixtures/
+    └── scenarios.py          # テストシナリオ定義
 
 # テスト実行
 pytest tests/
-
-# 単一テスト実行
-pytest tests/unit/test_fleet.py::test_combat_resolution -v
-
-# カバレッジ付きテスト
-pytest --cov=src tests/
-
-# Numba JITコンパイル確認
-python -c "from src.layers.fleet.combat import resolve_combat; resolve_combat.inspect_types()"
-
-# Ray クラスタ起動（開発用）
-ray start --head --port=6379
-
-# シミュレーション実行例
-python examples/basic_combat.py --seed 42 --duration 1000
-
-# ログ解析
-python scripts/analyze_log.py logs/simulation_20250119.log
+pytest tests/unit/test_combat.py::test_damage_calculation -v
+pytest --cov=src --cov-report=html tests/
 ```
+
+---
+
+## 技術スタック
+
+### 現在使用中（Phase 1-2）
+
+- **Python 3.12+**: メイン言語
+- **NumPy 2.3.4+**: 決定論的乱数生成（PCG64）
+- **uv**: パッケージ管理・仮想環境管理
+
+### Phase 3以降で導入予定
+
+- **Ray**: 分散処理・国家AIアクター
+- **SimPy**: 輸送イベントシミュレーション
+- **NetworkX**: 銀河ネットワークグラフ
+- **Numba**: 艦隊戦闘最適化（JITコンパイル）
+- **Pydantic**: データバリデーション
+
+---
+
+## 設計判断の根拠
+
+### なぜイベント駆動？
+
+- 時系列シミュレーションの標準パターン
+- 状態変更の追跡が容易（デバッグ・リプレイ）
+- 優先度制御による柔軟な実行順序
+
+### なぜSystem層を導入？
+
+- 完全なECSへの段階的移行
+- データとロジックの分離により、将来的なNumba最適化が容易
+- 複数エンティティの一括更新でパフォーマンス向上
+
+### なぜ決定論的乱数？
+
+- シミュレーション結果の再現性確保
+- デバッグの容易性
+- テストの信頼性向上
+
+### なぜ段階的実装（Phase分割）？
+
+- 各フェーズで動作検証しながら進める
+- 設計ミスの早期発見
+- チーム全体の理解促進
 
 ---
 
@@ -294,80 +551,87 @@ python scripts/analyze_log.py logs/simulation_20250119.log
 
 **開発チームは日本人で構成されているため、すべての会話・ドキュメント・コメントは日本語で記述すること。**
 
-- **設計文書**: `docs/001-project-plan/` 内はすべて日本語
+### コーディング時の言語使用
+
+- **設計文書**: `docs/` 内はすべて日本語
 - **コードコメント**: 日本語で記述（特に複雑なロジック）
+- **docstring**: 日本語で記述
 - **Commit message**: 日本語推奨
 - **Pull Request**: 日本語で記述
 
 ### 主要な用語対応
-- 艦隊 = Fleet
-- 国家 = Nation
-- 惑星 = Planet
-- 輸送 = Transport
-- 人口 = Population
-- 離散イベント = Discrete Event
-- 並列処理 = Parallel Processing
 
----
-
-## 次のClaude Instanceへの指示
-
-### 現在の状態
-- **Phase 0完了**: プロジェクト初期化・設計完了
-- **Phase 1準備中**: 艦隊戦闘コアの実装待ち
-- **Branch**: `feature/init-project`（ドキュメント整備）
-
-### Phase 1開始時の最初のタスク
-
-1. Python環境セットアップ（pyproject.toml作成）
-2. `src/core/scheduler.py` 実装（時間ステップ管理）
-3. `src/layers/fleet/` 実装（NumPy配列ベース）
-4. `src/utils/rng.py` 実装（シード固定RNG）
-5. 2艦隊戦闘の統合テスト作成
-6. `examples/basic_combat.py` サンプル実装
-
-### テスト戦略
-
-- **単体テスト**: 各階層の更新ロジック（pytest）
-- **統合テスト**: 2艦隊戦闘シナリオ（複数シードで再現性確認）
-- **性能テスト**: 1000艦隊での実行時間計測
-- **決定論テスト**: 同一シード→同一結果の保証
-
-### Phase 1成功基準
-
-- 2艦隊が索敵・移動・交戦できる
-- 戦闘結果が艦隊パラメータに基づいて計算される
-- 同一シードで同一結果が再現される
-- NumPy配列演算で高速動作する
-
----
-
-## 設計判断の根拠
-
-### なぜPython？
-- NumPy/Numbaによる高速配列演算
-- Ray/SimPyなど強力なシミュレーションライブラリ
-- 科学計算エコシステムが充実
-- プロトタイピング速度
-
-### なぜ階層型ハイブリッド？
-- 単一モデルでは全階層を効率的に扱えない
-- 国家AI（重い処理）と艦隊移動（軽量・大量）は異なる最適化が必要
-- 更新頻度の分離で劇的な高速化
-
-### なぜ時間解像度を分離？
-- 銀河構造は毎tick変化しない
-- 人口も毎日変化しない
-- 必要な層だけを高頻度更新することでCPU使用量を1/10以下に削減
+| 日本語   | 英語（コード内）     |
+| -------- | -------------------- |
+| 艦隊     | Fleet                |
+| 艦船     | Ship                 |
+| 惑星     | Planet               |
+| 星系     | StarSystem           |
+| 戦闘     | Combat               |
+| 補給     | Resupply             |
+| 索敵     | Detection            |
+| 燃料     | Fuel                 |
+| 弾薬     | Ammo/Ammunition      |
+| 資源     | Resource             |
+| 国家     | Nation               |
+| 輸送     | Transport            |
+| 離散イベント | Discrete Event   |
+| 並列処理 | Parallel Processing  |
 
 ---
 
 ## 参考ドキュメント
 
-場所: `/home/dorothy/repos/omni-sim-project/init-project-by-claude/docs/001-project-plan/`
+### 設計資料（日本語）
 
-- **001-project-plan.md**: 艦隊戦闘システム設計（日本語）
-- **002-domain-plan.md**: 全ドメインパラメータ設計（日本語）
-- **003-solution.md**: 階層別技術選定とスケーリング戦略（日本語）
+場所: `/home/dorothy/repos/omni-sim-project/init-project-by-claude/docs/`
+
+- **001-project-plan/001-project-plan.md**: 艦隊戦闘システム設計
+- **001-project-plan/002-domain-plan.md**: 全ドメインパラメータ設計
+- **001-project-plan/003-solution.md**: 階層別技術選定とスケーリング戦略
+- **002-world-concept/**: 世界設定（政治・経済・資源・輸送など）
 
 すべてMermaid図付きで詳細に記述されています。
+
+### README.md
+
+Phase 1-2の実装詳細、実行方法、アーキテクチャ解説が記載されています。
+
+---
+
+## トラブルシューティング
+
+### シミュレーションが停止しない
+
+```python
+# 原因: 戦闘終了条件が満たされない
+# 解決: MAX_TICKSを確認、または戦闘終了条件をログ出力
+
+# src/config/constants.py
+MAX_TICKS = 1000  # 無限ループ防止
+```
+
+### 乱数結果が再現しない
+
+```python
+# 原因: グローバルRNGが初期化されていない
+# 解決: SimulationController初期化時にシード設定を確認
+
+from src.utils.rng import set_global_seed
+set_global_seed(42)  # 必ず最初に呼び出す
+```
+
+### 弾薬が補給されない
+
+```python
+# 原因: 惑星備蓄が不足
+# 解決: planet.fuel_stock / planet.ammo_stock を確認
+
+print(f"Planet stock: Fuel={planet.fuel_stock}kg, Ammo={planet.ammo_stock} rounds")
+```
+
+---
+
+**Last Updated**: 2025-10-19
+**Status**: Phase 2 Complete ✅
+**Next Milestone**: Phase 3 - SimPy輸送システム、星系間移動、国家AI（Ray）
