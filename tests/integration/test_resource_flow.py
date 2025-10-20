@@ -38,7 +38,7 @@ class TestResourceFlow:
 
     def test_fleet_fuel_consumption_over_time(self):
         """艦隊が時間経過で燃料消費"""
-        fleet = Fleet(1, "TestFleet", (0.0, 0.0, 0.0))
+        fleet = Fleet(1, "TestFleet", (0.0, 0.0, 0.0), ships=[])
         ship = Ship(1, "destroyer", "Destroyer")
         fleet.add_ship(ship)
         
@@ -57,7 +57,7 @@ class TestResourceFlow:
         
         planet = Planet(1, "Homeworld", (0.0, 0.0, 0.0), fuel_production=1000.0, ammo_production=100)
         
-        fleet = Fleet(1, "TestFleet", (0.0, 0.0, 0.0))
+        fleet = Fleet(1, "TestFleet", (0.0, 0.0, 0.0), ships=[])
         ship = Ship(1, "destroyer", "Destroyer")
         ship.fuel = 1000.0  # 燃料を減らす
         ship.ammo = 50      # 弾薬を減らす
@@ -78,11 +78,11 @@ class TestResourceFlow:
         """戦闘が弾薬を消費する"""
         scheduler = EventScheduler()
         
-        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0))
+        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0), ships=[])
         ship_a = Ship(1, "destroyer", "A-Ship")
         fleet_a.add_ship(ship_a)
         
-        fleet_b = Fleet(2, "Fleet-B", (0.0, 0.0, 0.0))
+        fleet_b = Fleet(2, "Fleet-B", (0.0, 0.0, 0.0), ships=[])
         ship_b = Ship(2, "destroyer", "B-Ship")
         fleet_b.add_ship(ship_b)
         
@@ -114,7 +114,7 @@ class TestResourceCycle:
         planet = Planet(1, "Homeworld", (0.0, 0.0, 0.0), fuel_production=2000.0, ammo_production=200)
         
         # 艦隊
-        fleet = Fleet(1, "HomeFleet", (0.0, 0.0, 0.0))
+        fleet = Fleet(1, "HomeFleet", (0.0, 0.0, 0.0), ships=[])
         ship = Ship(1, "destroyer", "Destroyer")
         fleet.add_ship(ship)
         
@@ -165,7 +165,7 @@ class TestResourceCycle:
         planet.ammo_stock = 10
         
         # 艦隊（燃料・弾薬が空）
-        fleet = Fleet(1, "NeedyFleet", (0.0, 0.0, 0.0))
+        fleet = Fleet(1, "NeedyFleet", (0.0, 0.0, 0.0), ships=[])
         ship = Ship(1, "destroyer", "Destroyer")
         ship.fuel = 0.0
         ship.ammo = 0

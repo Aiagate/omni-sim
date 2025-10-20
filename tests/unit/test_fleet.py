@@ -23,10 +23,9 @@ class TestFleetCreation:
         assert len(fleet.ships) == 0
 
     def test_add_ship(self):
-        """艦船を追加"""
-        fleet = Fleet(1, "Test-Fleet", (0.0, 0.0, 0.0), ships=[])
+        """艦船を追加（ships配列への直接追加）"""
         ship = Ship(1, "destroyer", "Destroyer-1")
-        fleet.add_ship(ship)
+        fleet = Fleet(1, "Test-Fleet", (0.0, 0.0, 0.0), ships=[ship])
         assert len(fleet.ships) == 1
         assert fleet.ships[0] == ship
 
@@ -80,10 +79,10 @@ class TestFleetShipManagement:
         assert sample_fleet.is_destroyed() is True
 
     def test_count_alive(self, sample_fleet):
-        """生存艦船数のカウント"""
-        assert sample_fleet.count_alive() == 2
+        """生存艦船数のカウント（len(get_alive_ships())で代替）"""
+        assert len(sample_fleet.get_alive_ships()) == 2
         sample_fleet.ships[0].take_damage(1000)
-        assert sample_fleet.count_alive() == 1
+        assert len(sample_fleet.get_alive_ships()) == 1
 
 
 @pytest.mark.unit

@@ -24,11 +24,8 @@ class TestBasicCombatIntegration:
         scheduler = EventScheduler()
         
         # 2つの艦隊を作成
-        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0))
-        fleet_a.add_ship(Ship(1, "destroyer", "A-Ship"))
-        
-        fleet_b = Fleet(2, "Fleet-B", (10.0, 0.0, 0.0))  # 近距離
-        fleet_b.add_ship(Ship(2, "destroyer", "B-Ship"))
+        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0), ships=[Ship(1, "destroyer", "A-Ship")])
+        fleet_b = Fleet(2, "Fleet-B", (10.0, 0.0, 0.0), ships=[Ship(2, "destroyer", "B-Ship")])
         
         # 索敵イベントをスケジュール
         detection = DetectionEvent(tick=1, fleet_a=fleet_a, fleet_b=fleet_b)
@@ -44,11 +41,11 @@ class TestBasicCombatIntegration:
         """戦闘イベントがダメージを与える"""
         scheduler = EventScheduler()
         
-        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0))
+        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0), ships=[])
         ship_a = Ship(1, "battleship", "A-Battleship")
         fleet_a.add_ship(ship_a)
         
-        fleet_b = Fleet(2, "Fleet-B", (0.0, 0.0, 0.0))
+        fleet_b = Fleet(2, "Fleet-B", (0.0, 0.0, 0.0), ships=[])
         ship_b = Ship(2, "destroyer", "B-Destroyer")
         fleet_b.add_ship(ship_b)
         
@@ -70,12 +67,11 @@ class TestBasicCombatIntegration:
         scheduler = EventScheduler()
         
         # 圧倒的な戦力差
-        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0))
+        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0), ships=[])
         for i in range(3):
             fleet_a.add_ship(Ship(i, f"A-Battleship-{i}", "battleship", (0.0, 0.0, 0.0)))
         
-        fleet_b = Fleet(2, "Fleet-B", (0.0, 0.0, 0.0))
-        fleet_b.add_ship(Ship(10, "destroyer", "B-Destroyer"))
+        fleet_b = Fleet(2, "Fleet-B", (0.0, 0.0, 0.0), ships=[Ship(10, "destroyer", "B-Destroyer")])
         
         # 索敵→戦闘
         detection = DetectionEvent(tick=1, fleet_a=fleet_a, fleet_b=fleet_b)
@@ -97,8 +93,7 @@ class TestSimulationController:
         sim = SimulationController(seed=42, max_ticks=50)
         
         # 簡単な戦闘シナリオ
-        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0))
-        fleet_a.add_ship(Ship(1, "cruiser", "A-Ship"))
+        fleet_a = Fleet(1, "Fleet-A", (0.0, 0.0, 0.0), ships=[Ship(1, "cruiser", "A-Ship")])
         
         fleet_b = Fleet(2, "Fleet-B", (5.0, 0.0, 0.0))
         fleet_b.add_ship(Ship(2, "destroyer", "B-Ship"))
@@ -123,7 +118,7 @@ class TestLongBattle:
         scheduler = EventScheduler()
         
         # 大規模艦隊
-        fleet_a = Fleet(1, "Imperial-Fleet", (0.0, 0.0, 0.0))
+        fleet_a = Fleet(1, "Imperial-Fleet", (0.0, 0.0, 0.0), ships=[])
         for i in range(5):
             fleet_a.add_ship(Ship(i, f"Imperial-{i}", "cruiser", (0.0, 0.0, 0.0)))
         

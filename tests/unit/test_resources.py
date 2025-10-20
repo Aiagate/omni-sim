@@ -106,25 +106,22 @@ class TestFleetSystem:
 
     def test_fleet_fuel_consumption(self):
         """艦隊の燃料消費"""
-        fleet = Fleet(1, "Test-Fleet", (0.0, 0.0, 0.0))
         ship = Ship(1, "destroyer", "Destroyer-1")
-        fleet.add_ship(ship)
-        
+        fleet = Fleet(1, "Test-Fleet", (0.0, 0.0, 0.0), ships=[ship])
+
         system = FleetSystem()
         initial_fuel = ship.fuel
-        
+
         system.update_consumption([fleet], tick=1)
-        
+
         # 駆逐艦の燃料消費率: 10kg/tick
         assert ship.fuel == initial_fuel - 10.0
 
     def test_multiple_fleet_consumption(self):
         """複数艦隊の一括燃料消費"""
-        fleet1 = Fleet(1, "Fleet-1", (0.0, 0.0, 0.0))
-        fleet1.add_ship(Ship(1, "destroyer", "DD-1"))
+        fleet1 = Fleet(1, "Fleet-1", (0.0, 0.0, 0.0), ships=[Ship(1, "destroyer", "DD-1")])
         
-        fleet2 = Fleet(2, "Fleet-2", (0.0, 0.0, 0.0))
-        fleet2.add_ship(Ship(2, "cruiser", "CA-1"))
+        fleet2 = Fleet(2, "Fleet-2", (0.0, 0.0, 0.0), ships=[Ship(2, "cruiser", "CA-1")])
         
         system = FleetSystem()
         system.update_consumption([fleet1, fleet2], tick=1)
@@ -142,7 +139,7 @@ class TestStarSystem:
         """星系の生成"""
         assert sample_star_system.name == "Test-System"
         assert len(sample_star_system.planets) == 1
-        assert len(sample_star_system.fleets) == 1
+        assert len(sample_star_system.fleets_present) == 1
 
     def test_add_planet(self):
         """惑星の追加"""
@@ -156,19 +153,19 @@ class TestStarSystem:
     def test_add_fleet(self):
         """艦隊の追加"""
         system = StarSystem(1, "System", (0.0, 0.0, 0.0))
-        fleet = Fleet(1, "Fleet", (0.0, 0.0, 0.0))
+        fleet = Fleet(1, "Fleet", (0.0, 0.0, 0.0), ships=[])
         
         system.add_fleet(fleet)
-        assert len(system.fleets) == 1
-        assert system.fleets[0] == fleet
+        assert len(system.fleets_present) == 1
+        assert system.fleets_present[0] == fleet
 
     def test_remove_fleet(self, sample_star_system):
         """艦隊の削除"""
-        initial_count = len(sample_star_system.fleets)
-        fleet = sample_star_system.fleets[0]
+        initial_count = len(sample_star_system.fleets_present)
+        fleet = sample_star_system.fleets_present[0]
         
         sample_star_system.remove_fleet(fleet)
-        assert len(sample_star_system.fleets) == initial_count - 1
+        assert len(sample_star_system.fleets_present) == initial_count - 1
 
 
 @pytest.mark.unit
