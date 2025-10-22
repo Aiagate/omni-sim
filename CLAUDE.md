@@ -449,24 +449,41 @@ def _should_end_battle(fleet_a: Fleet, fleet_b: Fleet) -> bool:
 - **実行可能**: `examples/basic_combat.py`, `examples/resource_combat.py`
 - **テスト実行可能**: `uv run pytest tests/unit/` で全77テスト実行
 
-### Phase 3開始時の最初のタスク
+### Phase 3開始時の最初のタスク（2025-10-22更新）
 
-#### 1. SimPy輸送システム実装
+**Phase 3実装優先順位**:
 
+#### Phase 3A: 経済・交易システム（最優先 🎯）
+
+**理由**:
+- Phase 2の資源管理システムの自然な拡張
+- プロトタイプ実装済み（`examples/economy_prototype.py`）
+- パフォーマンス実証済み（0.15ms/tick、5星系3資源）
+- 設計文書完備（`docs/003-economic-solution.md`）
+
+**実装内容**:
 ```python
-# src/layers/transport/ 新規作成
-# - transport_process.py: SimPyプロセス定義
-# - convoy.py: 輸送船団エンティティ
-# - routing.py: 航路計算
+# src/economy/ 新規作成
+# - trade_network.py: NetworkXによる交易ネットワーク
+# - price_system.py: NumPy行列演算による物価計算
+# - market_equilibrium.py: scipy最適化による市場均衡
+# - transport_executor.py: Numba JIT最適化による資源移動
 
 # 実装目標:
-# - 惑星→惑星の資源輸送
-# - 輸送時間の計算（距離ベース）
-# - 輸送リスク（海賊襲撃など）
+# - 星系間の交易ネットワーク構築
+# - 需給バランスによる物価変動
+# - 価格伝播（拡散方程式モデル）
+# - 市場均衡計算（線形計画法）
+# - 大規模シミュレーション（1000+星系対応）
 ```
 
-#### 2. 星系間移動システム
+**参考文書**:
+- `docs/003-economic-solution.md` - 設計詳細
+- `examples/economy_prototype.py` - プロトタイプ実装
 
+#### Phase 3B: 星系間移動システム（重要）
+
+**実装内容**:
 ```python
 # src/entities/fleet.py 拡張
 # - set_course(destination: StarSystem): 航路設定
@@ -479,8 +496,33 @@ def _should_end_battle(fleet_a: Fleet, fleet_b: Fleet) -> bool:
 # - 航路上での遭遇イベント
 ```
 
-#### 3. 国家AIと経済システム（Ray導入）
+#### Phase 3C: SimPy輸送システム（推奨）
 
+**注意**: Phase 3Aの経済システム完成後に実装
+
+**実装内容**:
+```python
+# src/layers/transport/ 新規作成
+# - transport_process.py: SimPyプロセス定義
+# - convoy.py: 輸送船団エンティティ
+# - routing.py: 航路計算
+
+# 実装目標:
+# - 惑星→惑星の資源輸送（個別追跡）
+# - 輸送時間の計算（距離ベース）
+# - 輸送リスク（海賊襲撃など）
+# - デバッグ・可視化用途
+```
+
+**使い分け**:
+- **経済システム（Phase 3A）**: 大規模市場シミュレーション（行列演算）
+- **輸送システム（Phase 3C）**: 個別輸送船団の詳細追跡（イベント駆動）
+
+#### Phase 3D: 国家AIシステム（拡張）
+
+**注意**: Phase 3A, 3B, 3C完成後に実装
+
+**実装内容**:
 ```python
 # src/layers/nation/ 新規作成
 # - nation.py: 国家エンティティ（GDP・産業・技術）
@@ -493,13 +535,32 @@ def _should_end_battle(fleet_a: Fleet, fleet_b: Fleet) -> bool:
 # - Ray.remote での並列実行
 ```
 
-### Phase 3成功基準
+### Phase 3成功基準（優先順位順）
 
+#### Phase 3A: 経済・交易システム
+- [ ] 交易ネットワークグラフが構築できる（NetworkX）
+- [ ] 需給バランスによる物価変動が動作する（NumPy行列演算）
+- [ ] 価格伝播モデルが正しく機能する（拡散方程式）
+- [ ] 市場均衡計算が実行できる（scipy最適化）
+- [ ] 大規模シミュレーション（100+星系）で10ms/tick以下を達成
+- [ ] 単体テスト合格（経済システム関連テスト）
+
+#### Phase 3B: 星系間移動システム
+- [ ] 艦隊が星系間を移動できる
+- [ ] 移動中の燃料消費が正しく計算される
+- [ ] 航路上での遭遇イベントが発生する
+
+#### Phase 3C: SimPy輸送システム（オプション）
 - [ ] 輸送船団が惑星間を移動し、資源を運搬できる
-- [ ] 艦隊が星系間を移動し、移動中に燃料を消費する
+- [ ] 輸送時間の計算が正しく機能する
+- [ ] デバッグ・可視化が可能
+
+#### Phase 3D: 国家AIシステム（拡張）
 - [ ] 国家AIが並列で動作し、艦隊建造・資源配分を自律的に決定する
 - [ ] 経済システムが循環し、GDP・産業指数が動的に変化する
-- [ ] 統合テストが全て合格する
+
+#### 全体
+- [ ] 統合テストが全て合格する（Phase 2統合テスト修正含む）
 
 ### テスト戦略（既存テストの拡張）
 
