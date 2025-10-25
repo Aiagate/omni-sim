@@ -21,25 +21,49 @@
 
 ## 3D空間構造
 
-### 座標系
+### 座標系と浮動小数点精度
+
+#### 浮動小数点誤差の問題
+
+銀河規模（10万光年）で1億星系を扱う場合、浮動小数点精度が重要：
+
+**f32の限界**:
+- 仮数部23ビット → 約7桁の精度
+- 銀河サイズ100,000光年での精度: ±0.01光年（約100億km）
+- 遠方（50,000光年地点）では精度がさらに低下
+- 累積誤差による位置ずれ
+
+**f64の利点**:
+- 仮数部52ビット → 約15-16桁の精度
+- 銀河サイズでの精度: ±0.000001光年（約10億m）
+- 十分な精度マージン
+- メモリ増加: Vec3 12バイト → 24バイト（許容範囲）
+
+#### 推奨設計: f64座標系
 
 ```rust
-/// 3D銀河座標
+/// 3D銀河座標（高精度版）
+///
+/// f64を使用することで、銀河規模でも十分な精度を確保
 #[derive(Component, Clone, Copy)]
 pub struct GalacticPosition {
     /// X座標（光年）
-    pub x: f32,
+    pub x: f64,
 
     /// Y座標（光年、銀河円盤の高さ）
-    pub y: f32,
+    pub y: f64,
 
     /// Z座標（光年）
-    pub z: f32,
+    pub z: f64,
 }
 
 impl GalacticPosition {
+    /// イプシロン値（比較の閾値）
+    /// 0.001光年 = 約10億km（十分小さい）
+    pub const EPSILON: f64 = 0.001;
+
     /// 2点間の距離を計算（光年）
-    pub fn distance_to(&self, other: &GalacticPosition) -> f32 {
+    pub fn distance_to(&self, other: &GalacticPosition) -> f64 {
         let dx = self.x - other.x;
         let dy = self.y - other.y;
         let dz = self.z - other.z;
@@ -47,10 +71,140 @@ impl GalacticPosition {
     }
 
     /// 銀河中心からの距離
-    pub fn distance_from_core(&self) -> f32 {
+    pub fn distance_from_core(&self) -> f64 {
         (self.x * self.x + self.z * self.z).sqrt()
     }
+
+    /// 2つの位置がほぼ等しいか（イプシロン比較）
+    pub fn approx_eq(&self, other: &GalacticPosition) -> bool {
+        (self.x - other.x).abs() < Self::EPSILON &&
+        (self.y - other.y).abs() < Self::EPSILON &&
+        (self.z - other.z).abs() < Self::EPSILON
+    }
+
+    /// Vec3への変換（描画用にf32に変換）
+    pub fn to_vec3(&self) -> Vec3 {
+        Vec3::new(self.x as f32, self.y as f32, self.z as f32)
+    }
 }
+```
+
+#### 代替案: 階層的座標系
+
+メモリをさらに節約したい場合の高度な手法：
+
+```rust
+/// セクター（粗い領域区分）
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SectorId {
+    pub x: i16,  // -32768 〜 32767
+    pub y: i16,
+    pub z: i16,
+}
+
+/// 階層的座標
+///
+/// セクター内のローカル座標でf32を使用
+/// セクターサイズを適切に設定すればf32で十分な精度
+#[derive(Component, Clone, Copy)]
+pub struct HierarchicalPosition {
+    /// 所属セクター（1セクター = 1000光年四方など）
+    pub sector: SectorId,
+
+    /// セクター内のローカル座標（-500.0 〜 500.0光年）
+    pub local: Vec3,  // f32でOK
+}
+
+impl HierarchicalPosition {
+    /// セクターサイズ（光年）
+    const SECTOR_SIZE: f64 = 1000.0;
+
+    /// 絶対座標に変換
+    pub fn to_galactic(&self) -> GalacticPosition {
+        GalacticPosition {
+            x: (self.sector.x as f64) * Self::SECTOR_SIZE + self.local.x as f64,
+            y: (self.sector.y as f64) * Self::SECTOR_SIZE + self.local.y as f64,
+            z: (self.sector.z as f64) * Self::SECTOR_SIZE + self.local.z as f64,
+        }
+    }
+
+    /// 絶対座標から階層的座標へ変換
+    pub fn from_galactic(pos: GalacticPosition) -> Self {
+        let sector_x = (pos.x / Self::SECTOR_SIZE).floor() as i16;
+        let sector_y = (pos.y / Self::SECTOR_SIZE).floor() as i16;
+        let sector_z = (pos.z / Self::SECTOR_SIZE).floor() as i16;
+
+        let local_x = (pos.x - (sector_x as f64) * Self::SECTOR_SIZE) as f32;
+        let local_y = (pos.y - (sector_y as f64) * Self::SECTOR_SIZE) as f32;
+        let local_z = (pos.z - (sector_z as f64) * Self::SECTOR_SIZE) as f32;
+
+        HierarchicalPosition {
+            sector: SectorId { x: sector_x, y: sector_y, z: sector_z },
+            local: Vec3::new(local_x, local_y, local_z),
+        }
+    }
+
+    /// 同一セクター内での距離計算（高速）
+    pub fn local_distance_to(&self, other: &Self) -> Option<f64> {
+        if self.sector == other.sector {
+            Some(self.local.distance(other.local) as f64)
+        } else {
+            None  // 異なるセクター間は絶対座標で計算
+        }
+    }
+}
+```
+
+#### 境界判定での誤差対策
+
+```rust
+impl AABB {
+    /// イプシロン値
+    const EPSILON: f64 = 0.001;
+
+    /// 点が境界ボックス内にあるか（イプシロン考慮）
+    pub fn contains(&self, point: Vec3) -> bool {
+        let px = point.x as f64;
+        let py = point.y as f64;
+        let pz = point.z as f64;
+
+        px >= self.min.x - Self::EPSILON && px <= self.max.x + Self::EPSILON &&
+        py >= self.min.y - Self::EPSILON && py <= self.max.y + Self::EPSILON &&
+        pz >= self.min.z - Self::EPSILON && pz <= self.max.z + Self::EPSILON
+    }
+
+    /// 2つの境界ボックスが交差するか（イプシロン考慮）
+    pub fn intersects(&self, other: &AABB) -> bool {
+        let eps = Self::EPSILON;
+        self.min.x <= other.max.x + eps && self.max.x + eps >= other.min.x &&
+        self.min.y <= other.max.y + eps && self.max.y + eps >= other.min.y &&
+        self.min.z <= other.max.z + eps && self.max.z + eps >= other.min.z
+    }
+}
+```
+
+#### 推奨アプローチ
+
+**Phase 1-7（〜10万星系）**:
+- **f64座標系**を使用
+- シンプルで実装が容易
+- 精度は十分
+- メモリ増加は許容範囲（24バイト/星系）
+
+**Phase 8以降（100万星系〜）**:
+- パフォーマンス測定を実施
+- 必要に応じて階層的座標系を検討
+- 描画はf32、計算はf64という使い分けも可能
+
+#### メモリ使用量の比較
+
+| 座標系 | 星系あたり | 1億星系 |
+|--------|-----------|---------|
+| f32 Vec3 | 12バイト | 1.2GB |
+| f64 Vec3 | 24バイト | 2.4GB |
+| 階層的（i16×3 + f32×3） | 18バイト | 1.8GB |
+
+**結論**: f64を推奨（精度とシンプルさのバランス）
 ```
 
 ### 銀河の形状
@@ -61,19 +215,19 @@ impl GalacticPosition {
 /// 銀河の形状パラメータ
 pub struct GalaxyShape {
     /// 銀河の半径（光年）
-    pub radius: f32,  // 50,000 光年
+    pub radius: f64,  // 50,000.0 光年
 
     /// 渦巻きアームの数
     pub arm_count: u32,  // 4-6本
 
     /// 中心核の半径
-    pub core_radius: f32,  // 5,000 光年
+    pub core_radius: f64,  // 5,000.0 光年
 
     /// 円盤の厚さ
-    pub disk_thickness: f32,  // 1,000 光年
+    pub disk_thickness: f64,  // 1,000.0 光年
 
     /// 渦巻きの巻き具合（ラジアン/光年）
-    pub spiral_tightness: f32,
+    pub spiral_tightness: f64,
 }
 
 /// プロシージャルな星系生成
@@ -87,10 +241,10 @@ pub fn generate_galaxy_positions(
     for _ in 0..star_count {
         // 渦巻きアームに沿った分布
         let arm_index = rng.gen_range(0..galaxy.arm_count);
-        let arm_angle = (arm_index as f32) * (2.0 * PI / galaxy.arm_count as f32);
+        let arm_angle = (arm_index as f64) * (2.0 * std::f64::consts::PI / galaxy.arm_count as f64);
 
         // 中心からの距離（指数分布で中心部に多く）
-        let radius = rng.gen::<f32>().powf(0.5) * galaxy.radius;
+        let radius = rng.gen::<f64>().powf(0.5) * galaxy.radius;
 
         // 渦巻きアームに沿った角度
         let spiral_offset = radius * galaxy.spiral_tightness;
@@ -135,11 +289,32 @@ pub struct OctreeNode {
     pub system_count: usize,
 }
 
-/// 軸平行境界ボックス
+/// 軸平行境界ボックス（高精度版）
 #[derive(Clone, Copy)]
 pub struct AABB {
-    pub min: Vec3,
-    pub max: Vec3,
+    pub min: DVec3,  // f64版のVec3（Bevyの型）
+    pub max: DVec3,
+}
+
+// または独自定義
+#[derive(Clone, Copy)]
+pub struct Vec3d {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+impl Vec3d {
+    pub fn new(x: f64, y: f64, z: f64) -> Self {
+        Self { x, y, z }
+    }
+
+    pub fn distance(&self, other: &Self) -> f64 {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        let dz = self.z - other.z;
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    }
 }
 
 impl AABB {
@@ -287,14 +462,10 @@ pub enum DetailLevel {
 
 /// カメラからの距離に基づいてLODを決定
 pub fn calculate_lod(
-    camera_pos: Vec3,
+    camera_pos: GalacticPosition,  // f64座標
     system_pos: GalacticPosition,
 ) -> DetailLevel {
-    let distance = camera_pos.distance(Vec3::new(
-        system_pos.x,
-        system_pos.y,
-        system_pos.z,
-    ));
+    let distance = camera_pos.distance_to(&system_pos);
 
     match distance {
         d if d < 1000.0 => DetailLevel::Full,
