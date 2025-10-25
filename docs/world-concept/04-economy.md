@@ -67,35 +67,133 @@
 
 ## GDP（国内総生産）システム
 
-### 現在の実装
+### 現在の実装の問題点
 
 ```rust
 dest.gdp += fleet.cargo * 0.05;
 ```
 
-輸入国の GDP が貿易量の 5% 増加する単純なモデル。
+- 輸入国のみGDP増加（輸出国は？）
+- `× 0.05` という係数に根拠がない
+- 星系ベースの経済モデルと整合性がない
 
-[要確認: GDP計算の妥当性]
+### 新しいGDP計算モデル（提案）
 
-#### GDP の意味
+**「ゲーム的だが合理的」な経済モデル**
 
-- GDP は何を表すのか？
-  - [?] 純粋な経済規模
-  - [?] 国力の総合指標
-  - [?] 勝利条件の一部
+#### GDP の定義
 
-#### GDP の計算式
+GDP = 全星系の経済活動の総和
 
-- 現在の `× 0.05` は適切か？
-- 輸出国の GDP は増加しないのか？
-- 他の要因（生産、消費など）は考慮するか？
+```rust
+nation.gdp =
+    全星系の生産価値の合計 +
+    貿易による付加価値 +
+    技術・インフラ補正
+```
 
-#### GDP の影響
+#### 詳細な計算式
 
-- GDP が高いと何が起こるか？
-  - [?] より多くの貿易が可能
-  - [?] 軍事力の向上
-  - [?] 単なるスコア
+```rust
+/// 国家のGDP計算
+pub fn calculate_nation_gdp(
+    nation: &Nation,
+    systems: &Query<&StarSystem, With<Ownership>>,
+    territory: &Territory,
+) -> f32 {
+    let mut total_gdp = 0.0;
+
+    // 1. 各星系の基本生産価値
+    for system_entity in &territory.owned_systems {
+        if let Ok(system) = systems.get(*system_entity) {
+            // 資源生産価値（仮の価格設定）
+            let production_value =
+                system.resource_production.minerals * 1.0 +
+                system.resource_production.energy * 1.5 +
+                system.resource_production.food * 1.2 +
+                system.resource_production.industrial_goods * 2.0;
+
+            // インフラ補正
+            let infrastructure_bonus = system.infrastructure;
+
+            total_gdp += production_value * (1.0 + infrastructure_bonus);
+        }
+    }
+
+    // 2. 人口による経済規模
+    total_gdp += territory.total_population * 10.0;
+
+    // 3. 技術補正
+    total_gdp *= 1.0 + (nation.tech_level * 0.1);
+
+    total_gdp
+}
+```
+
+#### 貿易による経済効果
+
+貿易は両国に利益をもたらす：
+
+```rust
+/// 貿易実行時の経済効果
+pub fn trade_economic_impact(
+    exporter: &mut Nation,
+    importer: &mut Nation,
+    resource_type: ResourceType,
+    volume: f32,
+    distance: f32,
+) {
+    // 基本価格（資源タイプによる）
+    let base_price = match resource_type {
+        ResourceType::Minerals => 1.0,
+        ResourceType::Energy => 1.5,
+        ResourceType::Food => 1.2,
+        ResourceType::Industrial_Goods => 2.0,
+    };
+
+    // 取引価値
+    let trade_value = volume * base_price;
+
+    // 輸出国の利益（販売収入）
+    exporter.treasury.add_currency(trade_value * 0.8);
+
+    // 輸入国の利益（資源獲得による生産性向上）
+    // 資源を得ることで経済活動が活発化
+    importer.economic_activity += trade_value * 0.3;
+
+    // 輸送コスト（距離に応じて）
+    let transport_cost = volume * distance * 0.01;
+    exporter.treasury.subtract_currency(transport_cost * 0.5);
+    importer.treasury.subtract_currency(transport_cost * 0.5);
+}
+```
+
+### GDP の意味と影響
+
+#### GDP は何を表すか
+
+- **経済規模の総合指標**
+- 国力のバロメーター
+- 複数の要因から構成される複合指標
+
+#### GDP が高いことの効果
+
+1. **より多くの投資が可能**
+   - 新規星系の植民
+   - インフラ整備
+   - 軍備拡張
+
+2. **技術開発の加速**
+   - GDP の一部を研究開発に投資
+   - tech_level の向上
+
+3. **外交的影響力**
+   - 大国としての発言力
+   - 小国からの協力要請
+
+4. **軍事力の基盤**
+   - GDP が高いほど大規模な艦隊を維持可能
+   - military_power の上限に影響
 
 ### GDP の成長モデル
 
