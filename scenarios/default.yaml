@@ -1,0 +1,223 @@
+star_systems:
+  - name: "Sol 星系"
+    planets:
+      - name: "地球"
+        population:
+          count: 10000000.0
+          growth_rate: 0.002
+        resources:
+          food: 1000.0
+          minerals: 500.0
+          energy: 800.0
+          manufactured_goods: 300.0
+        production:
+          food_rate: 120.0
+          mineral_rate: 40.0
+          energy_rate: 80.0
+          manufacturing_rate: 30.0
+        military_strength: 10
+        environment:
+          mass: 1.0
+          gravity: 1.0
+          radius: 1.0
+          atmosphere: EarthLike
+          atmospheric_pressure: 1.0
+          temperature: 15.0
+          water_coverage: 0.71
+          radiation: 0.05
+          tectonic_activity: 0.1
+          meteorite_risk: 0.05
+          mineral_deposits: 1.0
+          mineral_accessibility: 1.0
+          renewable_energy_potential: 0.7
+        depletable_resources:
+          mineral_reserves: 1000000.0
+          fossil_fuel_reserves: 500000.0
+          rare_earth_reserves: 100000.0
+        renewable_resources:
+          soil_fertility: 1.0
+          forest_coverage: 0.31
+          renewable_energy_output: 1.0
+        environmental_health:
+          air_pollution: 0.05
+          water_pollution: 0.03
+    nations:
+      - name: "地球連邦"
+        planet_name: "地球"
+        character:
+          aggression: 0.3
+          trade_affinity: 0.6
+          research_focus: 0.8
+          expansionism: 0.4
+          diplomacy_flexibility: 0.7
+        identity:
+          traits:
+            - Technocracy
+        factions:
+          militarist: 0.2
+          merchant: 0.3
+          technocrat: 0.5
+
+  - name: "Alpha Centauri 星系"
+    planets:
+      - name: "プロキシマb"
+        population:
+          count: 2000000.0
+          growth_rate: 0.003
+        resources:
+          food: 400.0
+          minerals: 800.0
+          energy: 300.0
+          manufactured_goods: 150.0
+        production:
+          food_rate: 30.0
+          mineral_rate: 80.0
+          energy_rate: 25.0
+          manufacturing_rate: 20.0
+        military_strength: 5
+        environment:
+          mass: 1.3
+          gravity: 1.1
+          radius: 1.1
+          atmosphere: CarbonDioxide
+          atmospheric_pressure: 0.5
+          temperature: -20.0
+          water_coverage: 0.15
+          radiation: 0.45
+          tectonic_activity: 0.3
+          meteorite_risk: 0.2
+          mineral_deposits: 1.5
+          mineral_accessibility: 0.6
+          renewable_energy_potential: 0.4
+        depletable_resources:
+          mineral_reserves: 2000000.0
+          fossil_fuel_reserves: 100000.0
+          rare_earth_reserves: 50000.0
+        renewable_resources:
+          soil_fertility: 0.2
+          forest_coverage: 0.05
+          renewable_energy_output: 1.0
+        environmental_health:
+          air_pollution: 0.01
+          water_pollution: 0.01
+    nations:
+      - name: "ケンタウリ共和国"
+        planet_name: "プロキシマb"
+        character:
+          aggression: 0.2
+          trade_affinity: 0.9
+          research_focus: 0.5
+          expansionism: 0.3
+          diplomacy_flexibility: 0.8
+        identity:
+          traits:
+            - Pacifist
+        factions:
+          militarist: 0.1
+          merchant: 0.7
+          technocrat: 0.2
+
+  - name: "Sirius 星系"
+    planets:
+      - name: "シリウスIII"
+        population:
+          count: 5000000.0
+          growth_rate: 0.001
+        resources:
+          food: 600.0
+          minerals: 400.0
+          energy: 1000.0
+          manufactured_goods: 200.0
+        production:
+          food_rate: 55.0
+          mineral_rate: 50.0
+          energy_rate: 100.0
+          manufacturing_rate: 25.0
+        military_strength: 8
+        environment:
+          mass: 0.8
+          gravity: 0.9
+          radius: 0.9
+          atmosphere: Thin
+          atmospheric_pressure: 0.3
+          temperature: 5.0
+          water_coverage: 0.3
+          radiation: 0.1
+          tectonic_activity: 0.05
+          meteorite_risk: 0.1
+          mineral_deposits: 0.8
+          mineral_accessibility: 1.2
+          renewable_energy_potential: 0.9
+        depletable_resources:
+          mineral_reserves: 800000.0
+          fossil_fuel_reserves: 300000.0
+          rare_earth_reserves: 20000.0
+        renewable_resources:
+          soil_fertility: 0.5
+          forest_coverage: 0.15
+          renewable_energy_output: 1.2
+        environmental_health:
+          air_pollution: 0.02
+          water_pollution: 0.02
+    nations:
+      - name: "シリウス帝国"
+        planet_name: "シリウスIII"
+        character:
+          aggression: 0.8
+          trade_affinity: 0.3
+          research_focus: 0.4
+          expansionism: 0.7
+          diplomacy_flexibility: 0.3
+        identity:
+          traits:
+            - WarriorCulture
+        factions:
+          militarist: 0.6
+          merchant: 0.2
+          technocrat: 0.2
+
+diplomatic_relations:
+  - from_nation: "地球連邦"
+    to_nation: "ケンタウリ共和国"
+    score: 30.0
+  - from_nation: "地球連邦"
+    to_nation: "シリウス帝国"
+    score: -10.0
+  - from_nation: "ケンタウリ共和国"
+    to_nation: "地球連邦"
+    score: 25.0
+  - from_nation: "ケンタウリ共和国"
+    to_nation: "シリウス帝国"
+    score: -20.0
+  - from_nation: "シリウス帝国"
+    to_nation: "地球連邦"
+    score: -15.0
+  - from_nation: "シリウス帝国"
+    to_nation: "ケンタウリ共和国"
+    score: -25.0
+
+trade_routes:
+  - from_planet: "地球"
+    to_planet: "プロキシマb"
+    distance: 4.37
+    capacity: 50.0
+  - from_planet: "プロキシマb"
+    to_planet: "地球"
+    distance: 4.37
+    capacity: 50.0
+  - from_planet: "地球"
+    to_planet: "シリウスIII"
+    distance: 8.6
+    capacity: 30.0
+  - from_planet: "シリウスIII"
+    to_planet: "地球"
+    distance: 8.6
+    capacity: 30.0
+  - from_planet: "プロキシマb"
+    to_planet: "シリウスIII"
+    distance: 5.5
+    capacity: 40.0
+  - from_planet: "シリウスIII"
+    to_planet: "プロキシマb"
+    distance: 5.5
+    capacity: 40.0
