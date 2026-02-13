@@ -1,0 +1,10 @@
+pub mod population;
+pub mod economy;
+pub mod trade;
+pub mod military;
+pub mod diplomacy;
+pub mod war;
+pub mod research;
+pub mod events;
+pub mod index_update;
+pub mod terraforming;
