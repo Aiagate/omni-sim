@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-void: #020205;
+    --color-primary: #FF8C00;
+    --color-secondary: #4A4A6A;
+    --color-alert: #FF2A2A;
+  }
+
+  body {
+    background-color: var(--color-void);
+    color: var(--color-primary);
+    font-family: 'Share Tech Mono', monospace;
+    overflow: hidden;
+  }
+}
+
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 10px currentColor;
+  }
+}
