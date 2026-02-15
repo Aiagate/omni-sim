@@ -2,7 +2,6 @@ use bevy::prelude::*;
 
 use crate::components::economy::ResourceType;
 use crate::components::events::{EventKind, EventEffect};
-use crate::components::technology::TechField;
 
 /// イベントの重要度
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Reflect)]
@@ -112,14 +111,20 @@ pub enum SimulationEvent {
         tick: u64,
         planet: String,
         total_level: u32,
-        next_field: TechField,
+        next_field: crate::components::technology::TechId,
         rate: f64,
+    },
+    /// 技術がアンロックされた
+    TechUnlocked {
+        tick: u64,
+        nation: String,
+        tech: crate::components::technology::TechId,
     },
     /// 研究進捗レポート（定期送出）
     ResearchReport {
         tick: u64,
         planet: String,
-        levels: [u32; 8],
+        levels: [u32; 18],
         rate: f64,
         progress: f64,
         cost: f64,
@@ -150,6 +155,14 @@ pub enum SimulationEvent {
         phase: String,
     },
 
+    // === 宇宙・探索 ===
+    /// 新しい星系の発見
+    SystemDiscovered {
+        tick: u64,
+        nation: String,
+        system: String,
+    },
+
     // === 初期化 ===
     /// ワールド初期化完了
     WorldInitialized {
@@ -171,10 +184,12 @@ impl SimulationEvent {
 
             SimulationEvent::TradeSummary { .. } => EventImportance::Medium,
             SimulationEvent::TechLevelUp { .. } => EventImportance::Medium,
+            SimulationEvent::TechUnlocked { .. } => EventImportance::High,
             SimulationEvent::CombatReport { .. } => EventImportance::Medium,
             SimulationEvent::Ceasefire { .. } => EventImportance::Medium,
             SimulationEvent::RandomEvent { .. } => EventImportance::Medium,
             SimulationEvent::TerraformingPhaseComplete { .. } => EventImportance::Medium,
+            SimulationEvent::SystemDiscovered { .. } => EventImportance::High,
 
             SimulationEvent::WarDeclared { .. } => EventImportance::High,
             SimulationEvent::Surrender { .. } => EventImportance::High,

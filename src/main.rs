@@ -26,7 +26,12 @@ fn main() {
         match args[i].as_str() {
             "--max-ticks" => {
                 if i + 1 < args.len() {
-                    config.max_ticks = args[i + 1].parse().unwrap_or(config.max_ticks);
+                    let val = args[i + 1].as_str();
+                    if val == "-1" {
+                        config.max_ticks = u64::MAX;
+                    } else {
+                        config.max_ticks = val.parse().unwrap_or(config.max_ticks);
+                    }
                     i += 1;
                 }
             }
@@ -39,18 +44,34 @@ fn main() {
             "--tui" => {
                 config.tui_mode = true;
             }
+            "--tps" => {
+                if i + 1 < args.len() {
+                    config.max_tps = args[i + 1].parse().ok();
+                    i += 1;
+                }
+            }
             _ => {}
         }
         i += 1;
     }
 
     let tui_mode = config.tui_mode;
+    let max_tps = config.max_tps;
 
-    // TUI モードではインターバルを 16ms (≈60fps)、CLI モードでは 0ms（最高速）
-    let interval = if tui_mode {
-        Duration::from_millis(16)
-    } else {
-        Duration::from_millis(0)
+    // インターバルの計算
+    // 1. 指定がある場合はそれを使用 (1000ms / TPS)
+    // 2. TUI モードで指定がない場合は 60 TPS (16ms)
+    // 3. CLI モードで指定がない場合は 0ms (フルスピード)
+    let interval = match max_tps {
+        Some(tps) if tps > 0 => Duration::from_millis(1000 / tps),
+        Some(_) => Duration::from_millis(0), // TPS 0 は制限なし扱い
+        None => {
+            if tui_mode {
+                Duration::from_millis(16)
+            } else {
+                Duration::from_millis(0)
+            }
+        }
     };
 
     let mut app = App::new();
@@ -79,6 +100,9 @@ fn main() {
 
     // シミュレーションロジック
     app.add_plugins(SimulationPlugin);
+    
+    // Web Integration (Always active for now, or could be flagged)
+    app.add_plugins(plugins::web_integration::WebIntegrationPlugin);
 
     // 出力プラグイン: TUI or CLI
     if tui_mode {

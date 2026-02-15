@@ -6,7 +6,7 @@ use crate::components::environment::{PlanetaryEnvironment, RenewableResources, E
 use crate::components::population::Population;
 use crate::components::military::MilitaryStrength;
 use crate::components::diplomacy::{DiplomaticRelation, AtWar};
-use crate::components::technology::{TechnologyState, TechField};
+use crate::components::technology::{TechnologyState, TechId};
 use crate::components::events::{EventKind, EventEffect, EventLog};
 use crate::components::simulation_event::SimulationEvent;
 use crate::tick::CurrentTick;
@@ -38,7 +38,7 @@ use crate::plugins::tui_state;
 fn event_kind_emoji(kind: &EventKind) -> &'static str { tui_state::event_kind_emoji(kind) }
 fn event_kind_name(kind: &EventKind) -> &'static str { tui_state::event_kind_name(kind) }
 fn resource_type_name(rt: &ResourceType) -> &'static str { tui_state::resource_type_name(rt) }
-fn tech_field_name(field: &TechField) -> &'static str { tui_state::tech_field_name(field) }
+fn tech_field_name(field: &TechId) -> &'static str { tui_state::tech_field_name(field) }
 fn format_event_effect(effect: &EventEffect) -> String { tui_state::format_event_effect(effect) }
 
 // ============================================================
@@ -75,7 +75,11 @@ fn cli_event_display_system(
             // === 初期化 ===
             SimulationEvent::WorldInitialized { max_ticks, seed } => {
                 info!("=== Deep Juno シミュレーション開始 ===");
-                info!("  最大 Tick 数: {}", max_ticks);
+                if *max_ticks == u64::MAX {
+                    info!("  最大 Tick 数: 無制限");
+                } else {
+                    info!("  最大 Tick 数: {}", max_ticks);
+                }
                 info!("  乱数シード: {}", seed);
                 info!("================================");
             }
@@ -116,15 +120,13 @@ fn cli_event_display_system(
 
 
             SimulationEvent::TradeSummary { tick: t, from, to, total_amount, resources, .. } => {
-                if t % 10 == 0 {
-                    let items: Vec<String> = resources.iter()
-                        .map(|(rt, amt)| format!("{}:{:.1}", resource_type_name(rt), amt))
-                        .collect();
-                    info!(
-                        "[Tick {:>4}] 貿易: {} -> {} | 計 {:.1} ({})",
-                        t, from, to, total_amount, items.join(", ")
-                    );
-                }
+                let items: Vec<String> = resources.iter()
+                    .map(|(rt, amt)| format!("{}:{:.1}", resource_type_name(rt), amt))
+                    .collect();
+                info!(
+                    "[Tick {:>4}] 貿易: {} -> {} | 計 {:.1} ({})",
+                    t, from, to, total_amount, items.join(", ")
+                );
             }
 
             // === 軍事（10 Tick 毎） ===
@@ -175,20 +177,31 @@ fn cli_event_display_system(
                 }
             }
 
-            // === 研究（レベルアップは常時、レポートは 25 Tick 毎） ===
             SimulationEvent::TechLevelUp { tick: t, planet, total_level, next_field, rate } => {
                 info!(
                     "[Tick {:>4}] TECH {} -- 技術レベルアップ！ (総合Lv: {}, 次の研究: {}, 研究レート: {:.1}/Tick)",
                     t, planet, total_level, tech_field_name(next_field), rate
                 );
             }
+            SimulationEvent::TechUnlocked { tick: t, nation, tech } => {
+                info!(
+                    "[Tick {:>4}] UNLOCK {} -- {} が研究可能になりました！",
+                    t, nation, tech_field_name(tech)
+                );
+            }
             SimulationEvent::ResearchReport { tick: t, planet, levels, rate, progress, cost } => {
-                if t % 25 == 0 {
+                if t % 50 == 0 {
                     info!(
-                        "[Tick {:>4}] TECH {} -- 技術: 農Lv{} 鉱Lv{} ｴﾈLv{} 工Lv{} 軍Lv{} 航Lv{} 環Lv{} 核Lv{} (レート: {:.1}/Tick, 進捗: {:.0}/{:.0})",
-                        t, planet,
-                        levels[0], levels[1], levels[2], levels[3], levels[4], levels[5], levels[6], levels[7],
-                        rate, progress, cost
+                        "[Tick {:>4}] TECH {} -- T1: 農{} 鉱{} ｴﾈ{} 工{} 軍{} 航{} 環{}",
+                        t, planet, levels[0], levels[1], levels[2], levels[3], levels[4], levels[5], levels[6]
+                    );
+                    info!(
+                        "                  T2: ﾊﾞｲｵ{} 深部{} 核融合{} ﾅﾉ{} ｼｰﾙﾄﾞ{} FTL{}",
+                        levels[7], levels[8], levels[9], levels[10], levels[11], levels[12]
+                    );
+                    info!(
+                        "                  T3: ﾃﾗ{} ﾀﾞｲｿﾝ{} 移民{} ﾒｶﾞ{} ｻｲ{} (Rate:{:.1}, 進捗:{:.0}/{:.0})",
+                        levels[13], levels[14], levels[15], levels[16], levels[17], rate, progress, cost
                     );
                 }
             }
@@ -214,6 +227,12 @@ fn cli_event_display_system(
                 info!(
                     "[Tick {:>4}] TERRAFORMING {} -- {} フェーズ完了！居住性が向上しました。",
                     t, planet, phase
+                );
+            }
+            SimulationEvent::SystemDiscovered { tick: t, nation, system } => {
+                info!(
+                    "[Tick {:>4}] EXPLORATION {} が新しい星系 {} を発見しました！",
+                    t, nation, system
                 );
             }
         }

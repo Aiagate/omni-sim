@@ -1,9 +1,10 @@
 use bevy::prelude::*;
 
-use crate::components::common::SimName;
+use crate::components::common::{BelongsToNation, SimName};
 use crate::components::economy::Resources;
 use crate::components::population::Population;
 use crate::components::simulation_event::SimulationEvent;
+use crate::components::technology::{TechId, TechnologyState};
 use crate::tick::CurrentTick;
 
 use crate::components::environment::PlanetaryEnvironment;
@@ -19,10 +20,12 @@ pub fn population_growth_system(
         &Resources,
         &PlanetaryEnvironment,
         &crate::components::environment::EnvironmentalHealth,
+        &BelongsToNation,
     )>,
+    tech_query: Query<&TechnologyState>,
     mut events: EventWriter<SimulationEvent>,
 ) {
-    for (sim_name, mut pop, resources, env, health) in &mut query {
+    for (sim_name, mut pop, resources, env, health, belongs_to) in &mut query {
         let food_per_capita = resources.food / pop.count.max(1.0);
         let food_need_per_capita = config.balance.food_consumption_per_pop;
 
@@ -54,6 +57,12 @@ pub fn population_growth_system(
             let buffer = 1.0 - capacity_usage;
             growth_rate *= (buffer * 10.0).max(0.0);
         }
+
+        // 4. 技術ボーナス (Biotech)
+        let tech = tech_query.get(belongs_to.0).ok();
+        let biotech_level = tech.map_or(0, |t| t.level(TechId::Biotech));
+        let biotech_bonus = 1.0 + (biotech_level as f64 * 0.05);
+        growth_rate *= biotech_bonus;
 
         pop.effective_growth_rate = growth_rate;
 

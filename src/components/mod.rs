@@ -10,3 +10,5 @@ pub mod national_ai;
 pub mod nation_index;
 pub mod environment;
 pub mod terraforming;
+pub mod space;
+pub mod warfare;

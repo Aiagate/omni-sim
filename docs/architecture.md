@@ -191,6 +191,13 @@ erDiagram
     TradeRoute }o--|| Planet : "to_planet"
     AtWar }o--|| Nation : "enemy_nation"
     AtWar }o--|| Planet : "own/enemy_planet"
+
+> 詳細なクラス図と説明については [entity_relationships.md](architecture/entity_relationships.md) を参照してください。
+
+## 懸念事項と設計課題
+
+現在のアーキテクチャにおける懸念点や将来的な課題については [design_concerns.md](architecture/design_concerns.md) にまとめています。
+
 ```
 
 ---

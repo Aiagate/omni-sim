@@ -22,7 +22,7 @@ use crate::components::economy::Resources;
 use crate::components::military::MilitaryStrength;
 use crate::components::population::Population;
 use crate::components::simulation_event::SimulationEvent;
-use crate::components::technology::TechnologyState;
+use crate::components::technology::{TechnologyState, TechId};
 use crate::config::SimulationConfig;
 use crate::tick::CurrentTick;
 
@@ -52,7 +52,7 @@ impl Plugin for TuiOutputPlugin {
             .init_resource::<SimControl>()
             .add_systems(Startup, tui_setup_system)
             .add_systems(
-                FixedUpdate,
+                Update,
                 (
                     tui_input_system
                         .before(SimulationSet),
@@ -133,31 +133,31 @@ fn tui_input_system(mut sim_control: ResMut<SimControl>, mut state: ResMut<TuiAp
 
                 // ビュー切り替え: 詳細表示
                 KeyCode::Enter | KeyCode::Char('i') | KeyCode::Char('I') => {
-                    if state.view == TuiView::Main && !state.planets.is_empty() {
-                        state.view = TuiView::PlanetDetail;
+                    if state.view == TuiView::Main && !state.nations.is_empty() {
+                        state.view = TuiView::NationDetail;
                     }
                 }
                 // ビュー切り替え: 戻る
                 KeyCode::Esc | KeyCode::Backspace => {
-                    if state.view == TuiView::PlanetDetail {
+                    if state.view == TuiView::NationDetail {
                         state.view = TuiView::Main;
                     }
                 }
 
-                // 惑星選択
+                // 国家選択
                 KeyCode::Up => {
-                    if state.selected_planet > 0 {
-                        state.selected_planet -= 1;
+                    if state.selected_nation > 0 {
+                        state.selected_nation -= 1;
                     }
                 }
                 KeyCode::Down => {
-                    let max = if state.planets.is_empty() {
+                    let max = if state.nations.is_empty() {
                         0
                     } else {
-                        state.planets.len() - 1
+                        state.nations.len() - 1
                     };
-                    if state.selected_planet < max {
-                        state.selected_planet += 1;
+                    if state.selected_nation < max {
+                        state.selected_nation += 1;
                     }
                 }
 
@@ -299,6 +299,14 @@ fn tui_event_collector_system(
                     EventSeverity::Info,
                 );
             }
+ 
+            SimulationEvent::TechUnlocked { tick: t, nation, tech } => {
+                state.push_log(
+                    *t,
+                    format!("✨ {} 新技術アンロック: {}", nation, tech_field_name(tech)),
+                    EventSeverity::Critical,
+                );
+            }
 
             SimulationEvent::CombatReport { tick: t, attacker, target, ships_destroyed, casualties, remaining_ships } => {
                 if t % 5 == 0 {
@@ -350,6 +358,13 @@ fn tui_event_collector_system(
                     EventSeverity::Info,
                 );
             }
+            SimulationEvent::SystemDiscovered { tick: t, nation, system } => {
+                state.push_log(
+                    *t,
+                    format!("🔭 {} が新しい星系 {} を発見しました！", nation, system),
+                    EventSeverity::Critical,
+                );
+            }
         }
     }
 }
@@ -374,17 +389,42 @@ fn tui_snapshot_system(
         &crate::components::environment::RenewableResources,
         &crate::components::environment::EnvironmentalHealth,
     )>,
-    nations: Query<&TechnologyState>,
+    _nations: Query<&TechnologyState>,
     relations: Query<(&crate::components::common::SimName, &DiplomaticRelation)>,
     wars: Query<(&crate::components::common::SimName, &AtWar)>,
+    nations_query: Query<(Entity, &crate::components::common::SimName, &crate::components::national_ai::NationalCharacter, &TechnologyState)>,
+    star_systems_query: Query<(&crate::components::common::SimName, &crate::components::space::Position), With<crate::components::common::StarSystem>>,
+    catalog: Res<crate::components::space::GalacticCatalog>,
 ) {
     state.current_tick = tick.value;
     state.max_ticks = config.max_ticks;
 
+    // 星系スナップショットを更新
+    state.systems.clear();
+    // 発見済み星系
+    for (name, pos) in &star_systems_query {
+        state.systems.push(crate::plugins::tui_state::StarSystemSnapshot {
+            name: name.0.clone(),
+            x: pos.x,
+            y: pos.y,
+            z: pos.z,
+            is_discovered: true,
+        });
+    }
+    // 未発見星系 (GalacticCatalog)
+    for system in &catalog.undiscovered_systems {
+        state.systems.push(crate::plugins::tui_state::StarSystemSnapshot {
+            name: system.name.clone(),
+            x: system.position.x,
+            y: system.position.y,
+            z: system.position.z,
+            is_discovered: false,
+        });
+    }
+
     // 惑星スナップショットを更新
     state.planets.clear();
-    for (name, pop, res, mil, belongs_to, env, deplet, renew, health) in &planets {
-        let tech = belongs_to.and_then(|b| nations.get(b.0).ok());
+    for (name, pop, res, mil, _belongs_to, env, deplet, renew, health) in &planets {
         state.planets.push(PlanetSnapshot {
             name: name.0.clone(),
             population: pop.count,
@@ -396,25 +436,72 @@ fn tui_snapshot_system(
             ships: mil.map_or(0, |m: &MilitaryStrength| m.ships),
             power: mil.map_or(0.0, |m| m.power),
             in_combat: mil.map_or(false, |m| m.in_combat),
-            tech_total: tech.map_or(0, |t: &TechnologyState| t.total_level()),
-            tech_levels: tech.map_or([0; 8], |t: &TechnologyState| {
-                [
-                    t.agriculture_level,
-                    t.mining_level,
-                    t.energy_level,
-                    t.manufacturing_level,
-                    t.military_level,
-                    t.navigation_level,
-                    t.environmental_level,
-                    t.nuclear_fusion_level,
-                ]
-            }),
             starvation_ticks: pop.starvation_ticks,
             habitability: env.habitability,
             population_capacity: env.population_capacity,
             mineral_reserves_pct: (deplet.mineral_reserves / deplet.initial_mineral_reserves.max(1.0)),
             pollution: health.air_pollution + health.water_pollution,
             soil_fertility: renew.soil_fertility,
+        });
+    }
+
+    // 国家スナップショットを更新
+    state.nations.clear();
+    for (entity, name, character, tech) in nations_query.iter() {
+        let mut nation_pop = 0.0;
+        let mut nation_ships = 0;
+        let mut nation_power = 0.0;
+        let mut nation_food = 0.0;
+        let mut nation_minerals = 0.0;
+        let mut nation_energy = 0.0;
+        let mut nation_goods = 0.0;
+        let mut owned_planets = Vec::new();
+
+        for (p_name, p_pop, p_res, p_mil, p_belongs_to, _, _, _, _) in &planets {
+            if let Some(belongs) = p_belongs_to {
+                if belongs.0 == entity {
+                    nation_pop += p_pop.count;
+                    nation_food += p_res.food;
+                    nation_minerals += p_res.minerals;
+                    nation_energy += p_res.energy;
+                    nation_goods += p_res.manufactured_goods;
+                    if let Some(m) = p_mil {
+                        nation_ships += m.ships;
+                        nation_power += m.power;
+                    }
+                    owned_planets.push(p_name.0.clone());
+                }
+            }
+        }
+
+        let nation_name = name.0.clone();
+        if !sim_control.paused && !sim_control.stopped || sim_control.step_once {
+            let history = state.nation_histories.entry(nation_name.clone()).or_default();
+            history.push(nation_pop, nation_power, nation_food, nation_minerals, nation_energy, nation_goods);
+        }
+
+        state.nations.push(NationSnapshot {
+            name: nation_name,
+            total_population: nation_pop,
+            total_ships: nation_ships,
+            total_power: nation_power,
+            tech_total: tech.total_level(),
+            tech_levels: [
+                tech.level(TechId::Agriculture),
+                tech.level(TechId::Mining),
+                tech.level(TechId::Energy),
+                tech.level(TechId::Manufacturing),
+                tech.level(TechId::Military),
+                tech.level(TechId::Navigation),
+                tech.level(TechId::Environmental),
+                tech.level(TechId::Fusion),
+            ],
+            aggression: character.aggression,
+            research_focus: character.research_focus,
+            trade_affinity: character.trade_affinity,
+            expansionism: character.expansionism,
+            character_label: format_character_label(character),
+            planets: owned_planets,
         });
     }
 
@@ -522,7 +609,7 @@ fn render_dashboard(frame: &mut Frame, state: &TuiAppState, control: &SimControl
     
     match state.view {
         TuiView::Main => render_body(frame, main_layout[1], state),
-        TuiView::PlanetDetail => render_planet_detail(frame, main_layout[1], state),
+        TuiView::NationDetail => render_nation_detail(frame, main_layout[1], state),
     }
 
     render_footer(frame, main_layout[2], state, control);
@@ -546,16 +633,24 @@ fn render_header(frame: &mut Frame, area: Rect, state: &TuiAppState, control: &S
         _ => Color::Red,
     };
 
-    let progress_pct = if state.max_ticks > 0 {
+    let progress_pct = if state.max_ticks == u64::MAX {
+        0.0
+    } else if state.max_ticks > 0 {
         (state.current_tick as f64 / state.max_ticks as f64 * 100.0).min(100.0)
     } else {
         0.0
     };
 
+    let max_ticks_str = if state.max_ticks == u64::MAX {
+        "∞".to_string()
+    } else {
+        state.max_ticks.to_string()
+    };
+
     let header_text = format!(
         " Deep Juno   Tick: {}/{} ({:.0}%)  |  TPS: {:.1}  |  Speed: {}  |  Seed: {}",
         state.current_tick,
-        state.max_ticks,
+        max_ticks_str,
         progress_pct,
         state.tps,
         control.speed.label(),
@@ -594,83 +689,54 @@ fn render_body(frame: &mut Frame, area: Rect, state: &TuiAppState) {
         ])
         .split(area);
 
-    // 左パネル: 惑星テーブル + 外交 + 統計
+    // 左パネル: 国家テーブル + 星系テーブル + 外交 + 統計
     let left_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50), // 惑星テーブル
-            Constraint::Percentage(30), // 外交・戦争
+            Constraint::Percentage(35), // 国家テーブル
+            Constraint::Percentage(25), // 星系テーブル
+            Constraint::Percentage(25), // 外交・戦争
             Constraint::Length(7),      // 統計グラフ
         ])
         .split(body_layout[0]);
 
-    render_planet_table(frame, left_layout[0], state);
-    render_diplomacy_panel(frame, left_layout[1], state);
-    render_statistics_panel(frame, left_layout[2], state);
+    render_nation_table(frame, left_layout[0], state);
+    render_star_system_table(frame, left_layout[1], state);
+    render_diplomacy_panel(frame, left_layout[2], state);
+    render_statistics_panel(frame, left_layout[3], state);
 
     // 右パネル: イベントログ
     render_event_log(frame, body_layout[1], state);
 }
 
-/// 惑星サマリーテーブル
-fn render_planet_table(frame: &mut Frame, area: Rect, state: &TuiAppState) {
+/// 国家サマリーテーブル
+fn render_nation_table(frame: &mut Frame, area: Rect, state: &TuiAppState) {
     let header_cells = [
-        "惑星", "人口/上限", "成長率", "居住性", "土壌/汚染", "鉱物残", "食料", "鉱物", "ｴﾈﾙｷﾞｰ", "工業品", "艦船", "技術",
+        "国家", "総人口", "戦力/艦船", "技術Lv(計)", "傾向", "保有惑星数",
     ]
     .iter()
     .map(|h| Cell::from(*h).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
     let header = Row::new(header_cells).height(1);
 
     let rows: Vec<Row> = state
-        .planets
+        .nations
         .iter()
         .enumerate()
-        .map(|(i, p)| {
-            let combat_marker = if p.in_combat { "*" } else { " " };
-            let tech_str = format!(
-                "{} ({}/{}/{}/{}/{}/{}/{})",
-                p.tech_total,
-                p.tech_levels[0],
-                p.tech_levels[1],
-                p.tech_levels[2],
-                p.tech_levels[3],
-                p.tech_levels[4],
-                p.tech_levels[5],
-                p.tech_levels[6]
-            );
-
-            let name_style = if i == state.selected_planet {
+        .map(|(i, n)| {
+            let name_style = if i == state.selected_nation {
                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
 
-            let pop_color = if p.starvation_ticks > 0 {
-                Color::Red
-            } else {
-                Color::White
-            };
-
             Row::new(vec![
-                Cell::from(format!("{}{}", if i == state.selected_planet { "> " } else { "  " }, p.name))
+                Cell::from(format!("{}{}", if i == state.selected_nation { "> " } else { "  " }, n.name))
                     .style(name_style),
-                Cell::from(format!("{}/{}", format_short_population(p.population), format_short_population(p.population_capacity)))
-                    .style(Style::default().fg(pop_color)),
-                Cell::from(format!("{:+.2}%", p.growth_rate * 100.0))
-                    .style(Style::default().fg(if p.growth_rate >= 0.0 {
-                        Color::Green
-                    } else {
-                        Color::Red
-                    })),
-                Cell::from(format!("{:.2}", p.habitability)),
-                Cell::from(format!("{:.1}/{:.2}", p.soil_fertility, p.pollution)),
-                Cell::from(format!("{:.0}%", p.mineral_reserves_pct * 100.0)),
-                Cell::from(format!("{:.0}", p.food)),
-                Cell::from(format!("{:.0}", p.minerals)),
-                Cell::from(format!("{:.0}", p.energy)),
-                Cell::from(format!("{:.0}", p.manufactured_goods)),
-                Cell::from(format!("{}{}/{:.0}", combat_marker, p.ships, p.power)),
-                Cell::from(tech_str),
+                Cell::from(format_short_population(n.total_population)),
+                Cell::from(format!("{:.0}/{}", n.total_power, n.total_ships)),
+                Cell::from(format!("{}", n.tech_total)),
+                Cell::from(n.character_label.clone()),
+                Cell::from(format!("{}", n.planets.len())),
             ])
             .height(1)
         })
@@ -679,17 +745,11 @@ fn render_planet_table(frame: &mut Frame, area: Rect, state: &TuiAppState) {
     let table = Table::new(
         rows,
         [
+            Constraint::Length(20),
             Constraint::Length(12),
-            Constraint::Length(10),
-            Constraint::Length(8),
-            Constraint::Length(6),
-            Constraint::Length(9),
-            Constraint::Length(8),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(8),
+            Constraint::Length(15),
+            Constraint::Length(12),
+            Constraint::Length(15),
             Constraint::Length(12),
         ],
     )
@@ -698,10 +758,65 @@ fn render_planet_table(frame: &mut Frame, area: Rect, state: &TuiAppState) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::DarkGray))
-            .title(" Planets (Press Enter for detail) ")
+            .title(" Nations (Press Enter for detail) ")
             .title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
     )
     .row_highlight_style(Style::default().bg(Color::DarkGray));
+
+    frame.render_widget(table, area);
+}
+
+/// 星系サマリーテーブル
+fn render_star_system_table(frame: &mut Frame, area: Rect, state: &TuiAppState) {
+    let header_cells = ["星系名", "状態", "X", "Y", "Z", "距離"]
+        .iter()
+        .map(|h| Cell::from(*h).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+    let header = Row::new(header_cells).height(1);
+
+    let sol_pos = (0.0, 0.0, 0.0);
+
+    let rows: Vec<Row> = state
+        .systems
+        .iter()
+        .map(|s| {
+            let dist = ((s.x - sol_pos.0).powi(2) + (s.y - sol_pos.1).powi(2) + (s.z - sol_pos.2).powi(2)).sqrt();
+            let (status, style) = if s.is_discovered {
+                ("発見済", Style::default().fg(Color::Green))
+            } else {
+                ("未発見", Style::default().fg(Color::DarkGray))
+            };
+
+            Row::new(vec![
+                Cell::from(s.name.clone()).style(if s.is_discovered { Style::default().fg(Color::White) } else { Style::default().fg(Color::Gray) }),
+                Cell::from(status).style(style),
+                Cell::from(format!("{:.1}", s.x)),
+                Cell::from(format!("{:.1}", s.y)),
+                Cell::from(format!("{:.1}", s.z)),
+                Cell::from(format!("{:.2} LY", dist)),
+            ])
+            .height(1)
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(25),
+            Constraint::Length(10),
+            Constraint::Length(10),
+            Constraint::Length(10),
+            Constraint::Length(10),
+            Constraint::Length(15),
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray))
+            .title(" Star Systems ")
+            .title_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+    );
 
     frame.render_widget(table, area);
 }
@@ -948,62 +1063,66 @@ fn render_event_log(frame: &mut Frame, area: Rect, state: &TuiAppState) {
     frame.render_widget(log_list, area);
 }
 
-/// 惑星詳細ビュー
-fn render_planet_detail(frame: &mut Frame, area: Rect, state: &TuiAppState) {
-    if state.planets.is_empty() || state.selected_planet >= state.planets.len() {
+/// 国家詳細ビュー
+fn render_nation_detail(frame: &mut Frame, area: Rect, state: &TuiAppState) {
+    if state.nations.is_empty() || state.selected_nation >= state.nations.len() {
         return;
     }
-    let p = &state.planets[state.selected_planet];
+    let n = &state.nations[state.selected_nation];
 
     let detail_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" Detailed Info: {} ", p.name))
+        .title(format!(" Detailed Info: {} ", n.name))
         .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
     
     let inner_area = detail_block.inner(area);
     frame.render_widget(detail_block, area);
 
-    let main_detail_layout = Layout::default()
-        .direction(Direction::Horizontal)
+    // 上下レイアウト: 情報(2/3) + グラフ(1/3)
+    let vert_layout = Layout::default()
+        .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
+            Constraint::Percentage(65),
+            Constraint::Percentage(35),
         ])
         .split(inner_area);
 
-    // 左側: 基礎統計
-    let left_detail = vec![
-        Line::from(vec![Span::styled("Population: ", Style::default().fg(Color::Gray)), Span::raw(format_population(p.population))]),
-        Line::from(vec![Span::styled("Growth:     ", Style::default().fg(Color::Gray)), Span::styled(format!("{:+.2}%", p.growth_rate * 100.0), Style::default().fg(if p.growth_rate >= 0.0 { Color::Green } else { Color::Red }))]),
+    let main_detail_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Percentage(30),
+            Constraint::Percentage(30),
+        ])
+        .split(vert_layout[0]);
+
+    // 左側: 国家統計 & 性格
+    let mut left_detail = vec![
+        Line::from(vec![Span::styled("Total Population: ", Style::default().fg(Color::Gray)), Span::raw(format_population(n.total_population))]),
+        Line::from(vec![Span::styled("Total Military:   ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.1} ({})", n.total_power, n.total_ships))]),
         Line::from(""),
-        Line::from(Span::styled("--- Resources ---", Style::default().fg(Color::Yellow))),
-        Line::from(vec![Span::styled("Food:       ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.1}", p.food))]),
-        Line::from(vec![Span::styled("Minerals:   ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.1}", p.minerals))]),
-        Line::from(vec![Span::styled("Energy:     ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.1}", p.energy))]),
-        Line::from(vec![Span::styled("Goods:      ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.1}", p.manufactured_goods))]),
+        Line::from(Span::styled("--- Character & Personality ---", Style::default().fg(Color::Yellow))),
+        Line::from(vec![Span::styled("Personality:  ", Style::default().fg(Color::Gray)), Span::styled(&n.character_label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD))]),
+        Line::from(vec![Span::styled("Aggression:   ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.2}", n.aggression))]),
+        Line::from(vec![Span::styled("Research:     ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.2}", n.research_focus))]),
+        Line::from(vec![Span::styled("Trade:        ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.2}", n.trade_affinity))]),
+        Line::from(vec![Span::styled("Expansion:    ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.2}", n.expansionism))]),
         Line::from(""),
-        Line::from(Span::styled("--- Military ---", Style::default().fg(Color::Red))),
-        Line::from(vec![Span::styled("Ships:      ", Style::default().fg(Color::Gray)), Span::raw(p.ships.to_string())]),
-        Line::from(vec![Span::styled("Power:      ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.1}", p.power))]),
-        Line::from(vec![Span::styled("Status:     ", Style::default().fg(Color::Gray)), Span::styled(if p.in_combat { "IN COMBAT" } else { "Idle" }, Style::default().fg(if p.in_combat { Color::Red } else { Color::Green }))]),
-        Line::from(""),
-        Line::from(Span::styled("--- Environment & Sustainability ---", Style::default().fg(Color::Green))),
-        Line::from(vec![Span::styled("Habitability: ", Style::default().fg(Color::Gray)), Span::raw(format!("{:.2}", p.habitability))]),
-        Line::from(vec![Span::styled("Capacity:     ", Style::default().fg(Color::Gray)), Span::raw(format_population(p.population_capacity))]),
-        Line::from(vec![Span::styled("Soil Fertility:", Style::default().fg(Color::Gray)), Span::raw(format!("{:.2}", p.soil_fertility))]),
-        Line::from(vec![Span::styled("Pollution:    ", Style::default().fg(Color::Gray)), Span::styled(format!("{:.3}", p.pollution), Style::default().fg(if p.pollution > 0.5 { Color::Red } else if p.pollution > 0.1 { Color::Yellow } else { Color::Green }))]),
-        Line::from(vec![Span::styled("Minerals (Res):", Style::default().fg(Color::Gray)), Span::raw(format!("{:.1}%", p.mineral_reserves_pct * 100.0))]),
+        Line::from(Span::styled("--- Owned Planets ---", Style::default().fg(Color::Green))),
     ];
+    for p_name in &n.planets {
+        left_detail.push(Line::from(format!(" • {}", p_name)));
+    }
     frame.render_widget(Paragraph::new(left_detail), main_detail_layout[0]);
 
-    // 右側: 技術詳細
-    let tech_fields = ["Agriculture", "Mining", "Energy", "Manufacturing", "Military", "Navigation", "Environmental"];
+    // 中央: 技術詳細
+    let tech_fields = ["Agriculture", "Mining", "Energy", "Manufacturing", "Military", "Navigation", "Environmental", "Nuclear Fusion"];
     let mut tech_detail = vec![
         Line::from(Span::styled("--- Technology Levels ---", Style::default().fg(Color::Blue))),
     ];
     for (i, field) in tech_fields.iter().enumerate() {
-        let level = p.tech_levels[i];
+        let level = n.tech_levels[i];
         let bonus = (level as f64) * 0.10 * 100.0;
         tech_detail.push(Line::from(vec![
             Span::styled(format!("{:<14}: ", field), Style::default().fg(Color::Gray)),
@@ -1015,10 +1134,44 @@ fn render_planet_detail(frame: &mut Frame, area: Rect, state: &TuiAppState) {
     tech_detail.push(Line::from(""));
     tech_detail.push(Line::from(vec![
         Span::styled("Total Tech Level: ", Style::default().fg(Color::Cyan)),
-        Span::styled(p.tech_total.to_string(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(n.tech_total.to_string(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
     ]));
 
     frame.render_widget(Paragraph::new(tech_detail), main_detail_layout[1]);
+
+    // 右側: 惑星個別の簡易状況
+    let mut planet_detail = vec![
+        Line::from(Span::styled("--- Planet Status ---", Style::default().fg(Color::Magenta))),
+    ];
+    for p_name in &n.planets {
+        if let Some(p) = state.planets.iter().find(|p| p.name == *p_name) {
+            planet_detail.push(Line::from(vec![
+                Span::styled(format!("{}: ", p_name), Style::default().fg(Color::White)),
+                Span::raw(format!("Pop {} ", format_short_population(p.population))),
+                Span::styled(format!("({:+.1}%)", p.growth_rate * 100.0), Style::default().fg(if p.growth_rate >= 0.0 { Color::Green } else { Color::Red })),
+            ]));
+            planet_detail.push(Line::from(format!("  Hab: {:.2}, Pol: {:.2}", p.habitability, p.pollution)));
+        }
+    }
+    frame.render_widget(Paragraph::new(planet_detail), main_detail_layout[2]);
+
+    // 下側: リソース推移グラフ
+    if let Some(history) = state.nation_histories.get(&n.name) {
+        let graphs_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+            ])
+            .split(vert_layout[1]);
+
+        render_line_chart(frame, graphs_layout[0], &history.food, state.current_tick, " Food ", Color::Green);
+        render_line_chart(frame, graphs_layout[1], &history.minerals, state.current_tick, " Minerals ", Color::Gray);
+        render_line_chart(frame, graphs_layout[2], &history.energy, state.current_tick, " Energy ", Color::Yellow);
+        render_line_chart(frame, graphs_layout[3], &history.goods, state.current_tick, " Goods ", Color::Blue);
+    }
 }
 
 /// フッター: キーバインドヘルプ
@@ -1044,7 +1197,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &TuiAppState, control: &S
                 Span::raw("Scroll"),
             ]);
         }
-        TuiView::PlanetDetail => {
+        TuiView::NationDetail => {
             keys.extend_from_slice(&[
                 Span::styled("  [Esc] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::raw("Back"),
@@ -1128,16 +1281,17 @@ fn resource_type_short_name(rt: &crate::components::economy::ResourceType) -> &'
     }
 }
 
-fn tech_field_name(field: &crate::components::technology::TechField) -> &'static str {
+fn tech_field_name(field: &crate::components::technology::TechId) -> &'static str {
     match field {
-        crate::components::technology::TechField::Agriculture => "Agriculture",
-        crate::components::technology::TechField::Mining => "Mining",
-        crate::components::technology::TechField::EnergyTech => "Energy",
-        crate::components::technology::TechField::Manufacturing => "Manufacturing",
-        crate::components::technology::TechField::MilitaryTech => "Military",
-        crate::components::technology::TechField::SpaceNavigation => "Navigation",
-        crate::components::technology::TechField::EnvironmentalTech => "Environmental",
-        crate::components::technology::TechField::NuclearFusion => "Nuclear Fusion",
+        crate::components::technology::TechId::Agriculture => "Agriculture",
+        crate::components::technology::TechId::Mining => "Mining",
+        crate::components::technology::TechId::Energy => "Energy",
+        crate::components::technology::TechId::Manufacturing => "Manufacturing",
+        crate::components::technology::TechId::Military => "Military",
+        crate::components::technology::TechId::Navigation => "Navigation",
+        crate::components::technology::TechId::Environmental => "Environmental",
+        crate::components::technology::TechId::Fusion => "Nuclear Fusion",
+        _ => "Special Tech",
     }
 }
 
@@ -1184,4 +1338,18 @@ fn format_event_effect(effect: &crate::components::events::EventEffect) -> Strin
     if effect.goods_change != 0.0 { parts.push(format!("Goods: {:+.0}", effect.goods_change)); }
     if effect.research_change != 0.0 { parts.push(format!("Res: {:+.0}", effect.research_change)); }
     parts.join(", ")
+}
+
+fn format_character_label(character: &crate::components::national_ai::NationalCharacter) -> String {
+    if character.aggression > 0.7 {
+        "好戦的".to_string()
+    } else if character.research_focus > 0.7 {
+        "技術志向".to_string()
+    } else if character.trade_affinity > 0.7 {
+        "交易志向".to_string()
+    } else if character.expansionism > 0.7 {
+        "拡張主義".to_string()
+    } else {
+        "中立的".to_string()
+    }
 }

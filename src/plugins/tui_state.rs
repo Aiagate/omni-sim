@@ -1,8 +1,9 @@
 use bevy::prelude::*;
+use bevy::utils::HashMap;
 
 use crate::components::economy::ResourceType;
 use crate::components::events::{EventEffect, EventKind};
-use crate::components::technology::TechField;
+use crate::components::technology::TechId;
 
 // ============================================================
 // 惑星スナップショット
@@ -21,14 +22,75 @@ pub struct PlanetSnapshot {
     pub ships: u32,
     pub power: f64,
     pub in_combat: bool,
-    pub tech_total: u32,
-    pub tech_levels: [u32; 8], // 農業, 採掘, ｴﾈﾙｷﾞｰ, 工業, 軍事, 航行, 環境, 核融合
     pub starvation_ticks: u32,
     pub habitability: f64,
     pub population_capacity: f64,
     pub mineral_reserves_pct: f64,
     pub pollution: f64,
     pub soil_fertility: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct StarSystemSnapshot {
+    pub name: String,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub is_discovered: bool,
+}
+
+// ============================================================
+// 国家スナップショット
+// ============================================================
+
+/// 国家の状態を TUI 表示用にスナップショットとして保持する
+#[derive(Clone, Debug)]
+pub struct NationSnapshot {
+    pub name: String,
+    pub total_population: f64,
+    pub total_ships: u32,
+    pub total_power: f64,
+    pub tech_total: u32,
+    pub tech_levels: [u32; 8], // 農業, 採掘, ｴﾈﾙｷﾞｰ, 工業, 軍事, 航行, 環境, 核融合
+    pub aggression: f64,
+    pub research_focus: f64,
+    pub trade_affinity: f64,
+    pub expansionism: f64,
+    pub character_label: String,
+    pub planets: Vec<String>, // 保有する惑星名のリスト
+}
+
+// ============================================================
+// 国家履歴
+// ============================================================
+
+/// 国家の資源・人口推移を保持する
+#[derive(Clone, Debug, Default)]
+pub struct NationHistory {
+    pub population: Vec<u64>,
+    pub power: Vec<u64>,
+    pub food: Vec<u64>,
+    pub minerals: Vec<u64>,
+    pub energy: Vec<u64>,
+    pub goods: Vec<u64>,
+}
+
+impl NationHistory {
+    pub fn push(&mut self, pop: f64, pwr: f64, f: f64, m: f64, e: f64, g: f64) {
+        self.population.push(pop as u64);
+        self.power.push(pwr as u64);
+        self.food.push(f as u64);
+        self.minerals.push(m as u64);
+        self.energy.push(e as u64);
+        self.goods.push(g as u64);
+
+        if self.population.len() > 100 { self.population.remove(0); }
+        if self.power.len() > 100 { self.power.remove(0); }
+        if self.food.len() > 100 { self.food.remove(0); }
+        if self.minerals.len() > 100 { self.minerals.remove(0); }
+        if self.energy.len() > 100 { self.energy.remove(0); }
+        if self.goods.len() > 100 { self.goods.remove(0); }
+    }
 }
 
 // ============================================================
@@ -120,6 +182,9 @@ impl SimSpeed {
 #[derive(Resource)]
 pub struct TuiAppState {
     pub planets: Vec<PlanetSnapshot>,
+    pub systems: Vec<StarSystemSnapshot>,
+    pub nations: Vec<NationSnapshot>,
+    pub nation_histories: HashMap<String, NationHistory>,
     pub event_log: Vec<EventLogEntry>,
     pub diplomacy: Vec<DiplomacyEntry>,
     pub wars: Vec<WarEntry>,
@@ -127,6 +192,7 @@ pub struct TuiAppState {
     pub max_ticks: u64,
     pub seed: u64,
     pub selected_planet: usize,
+    pub selected_nation: usize,
     pub log_scroll_offset: usize,
     pub view: TuiView,
     pub population_history: Vec<u64>,
@@ -138,6 +204,9 @@ impl Default for TuiAppState {
     fn default() -> Self {
         Self {
             planets: Vec::new(),
+            systems: Vec::new(),
+            nations: Vec::new(),
+            nation_histories: HashMap::new(),
             event_log: Vec::new(),
             diplomacy: Vec::new(),
             wars: Vec::new(),
@@ -145,6 +214,7 @@ impl Default for TuiAppState {
             max_ticks: 0,
             seed: 0,
             selected_planet: 0,
+            selected_nation: 0,
             log_scroll_offset: 0,
             view: TuiView::Main,
             population_history: Vec::new(),
@@ -198,7 +268,7 @@ impl Default for SimControl {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TuiView {
     Main,
-    PlanetDetail,
+    NationDetail,
 }
 
 /// シミュレーションが実行中かどうかを判定する Bevy Run Condition
@@ -267,17 +337,27 @@ pub fn resource_type_name(rt: &ResourceType) -> &'static str {
     }
 }
 
-/// TechField → 日本語名の変換（表示専用）
-pub fn tech_field_name(field: &TechField) -> &'static str {
+/// TechId → 日本語名の変換（表示専用）
+pub fn tech_field_name(field: &TechId) -> &'static str {
     match field {
-        TechField::Agriculture => "農業",
-        TechField::Mining => "採掘",
-        TechField::EnergyTech => "ｴﾈﾙｷﾞｰ",
-        TechField::Manufacturing => "工業",
-        TechField::MilitaryTech => "軍事",
-        TechField::SpaceNavigation => "宇宙航行",
-        TechField::EnvironmentalTech => "環境技術",
-        TechField::NuclearFusion => "核融合",
+        TechId::Agriculture => "農業",
+        TechId::Mining => "採掘",
+        TechId::Energy => "ｴﾈﾙｷﾞｰ",
+        TechId::Manufacturing => "工業",
+        TechId::Military => "軍事",
+        TechId::Navigation => "宇宙航行",
+        TechId::Environmental => "環境技術",
+        TechId::Biotech => "バイオ",
+        TechId::DeepMining => "深部採掘",
+        TechId::Fusion => "核融合",
+        TechId::Nanotech => "ナノテク",
+        TechId::Shields => "シールド",
+        TechId::FTL => "FTL航法",
+        TechId::Terraforming => "テラフォーミング",
+        TechId::DysonSphere => "ダイソンスフィア",
+        TechId::ColonyShip => "植民船",
+        TechId::Megastructure => "メガ構造",
+        TechId::PsiTech => "サイオニック",
     }
 }
 

@@ -46,6 +46,17 @@ pub struct BalanceConfig {
     pub tf_phase_temp_costs: (f64, f64, f64, f64),
     pub tf_phase_water_costs: (f64, f64, f64, f64),
     pub tf_phase_bio_costs: (f64, f64, f64, f64),
+
+    /// 軍事技術による建造コスト削減係数 (1レベルあたり)
+    pub military_tech_cost_reduction: f64,
+    /// 宇宙航行技術による貿易容量ボーナス係数 (1レベルあたり)
+    pub navigation_tech_capacity_bonus: f64,
+    /// FTL技術による貿易コスト削減係数 (1レベルあたり)
+    pub ftl_tech_cost_reduction: f64,
+    /// ナノテクによる工業品産出ボーナス係数 (1レベルあたり)
+    pub nanotech_mf_bonus: f64,
+    /// バイオテクによる人口成長ボーナス係数 (1レベルあたり)
+    pub biotech_growth_bonus: f64,
 }
 
 impl Default for BalanceConfig {
@@ -72,6 +83,11 @@ impl Default for BalanceConfig {
             tf_phase_temp_costs: (30.0, 0.0, 0.0, 0.033),
             tf_phase_water_costs: (20.0, 10.0, 0.0, 0.025),
             tf_phase_bio_costs: (10.0, 5.0, 10.0, 0.016),
+            military_tech_cost_reduction: 0.05,
+            navigation_tech_capacity_bonus: 0.15,
+            ftl_tech_cost_reduction: 0.30,
+            nanotech_mf_bonus: 0.30,
+            biotech_growth_bonus: 0.05,
         }
     }
 }
@@ -85,6 +101,8 @@ pub struct SimulationConfig {
     pub seed: u64,
     /// TUI モードで起動するかどうか
     pub tui_mode: bool,
+    /// シミュレーションの最大 TPS (Ticks Per Second)
+    pub max_tps: Option<u64>,
     /// 表示する最低重要度
     pub min_importance: crate::components::simulation_event::EventImportance,
     /// バランス調整用定数
@@ -97,6 +115,7 @@ impl Default for SimulationConfig {
             max_ticks: 50,
             seed: 42,
             tui_mode: false,
+            max_tps: None,
             min_importance: crate::components::simulation_event::EventImportance::Low,
             balance: BalanceConfig::default(),
         }

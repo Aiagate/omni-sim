@@ -13,8 +13,14 @@ use crate::components::environment::{PlanetaryEnvironment, RenewableResources, E
 use crate::components::technology::TechnologyState;
 use crate::components::terraforming::TerraformingProject;
 use crate::components::simulation_event::SimulationEvent;
+use crate::components::space::{Position, GalacticCatalog, PotentialSystem, Orbit};
 use crate::config::SimulationConfig;
 use crate::world_snapshot::*;
+use crate::world_snapshot::AtmosphereTypeSnapshot;
+use rand::prelude::*;
+use rand::Rng;
+use rand_chacha::ChaCha20Rng;
+use std::f64::consts::PI;
 
 /// 初期世界を生成するプラグイン
 pub struct WorldInitPlugin;
@@ -60,10 +66,19 @@ fn spawn_world_from_scenario(
 
     // 1. 星系と惑星・国家の生成
     for ss_snap in snapshot.star_systems {
-        let star_system_id = commands.spawn((StarSystem, SimName(ss_snap.name))).id();
+        let pos = Position::new(ss_snap.position.x, ss_snap.position.y, ss_snap.position.z);
+        let star_system_id = commands.spawn((StarSystem, SimName(ss_snap.name), pos)).id();
 
         // 惑星の生成
-        for p_snap in ss_snap.planets {
+        for (idx, p_snap) in ss_snap.planets.into_iter().enumerate() {
+            // シナリオからの生成時は、インデックスに基づいて適当な軌道を割り当てる
+            // 0.5 AU + idx * 1.5 AU
+            let orbit = Orbit {
+                distance: 0.5 + idx as f32 * 1.5,
+                angle: rand::thread_rng().gen_range(0.0..2.0 * std::f32::consts::PI),
+                speed: 0.02 / (1.0 + idx as f32).sqrt(), // 遠いほど遅く
+            };
+
             let atmosphere = match p_snap.environment.atmosphere {
                 AtmosphereTypeSnapshot::EarthLike => crate::components::environment::AtmosphereType::EarthLike,
                 AtmosphereTypeSnapshot::CarbonDioxide => crate::components::environment::AtmosphereType::CarbonDioxide,
@@ -135,6 +150,7 @@ fn spawn_world_from_scenario(
                 depletable,
                 renewable,
                 health,
+                orbit,
                 TerraformingProject::default(),
             )).id();
             planet_map.insert(p_snap.name, planet_id);
@@ -217,9 +233,142 @@ fn spawn_world_from_scenario(
         commands.spawn((TradeRouteMarker, TradeRoute::new(from_id, to_id, tr_snap.distance, tr_snap.capacity)));
     }
 
+    // 4. 銀河カタログの生成
+    let mut rng = ChaCha20Rng::seed_from_u64(config.seed);
+    let mut catalog = GalacticCatalog::default();
+    
+    for i in 0..50 { // とりあえず50星系
+        let distance_from_center = rng.gen_range(10.0..100.0);
+        let angle = rng.gen_range(0.0..2.0 * PI);
+        let x = distance_from_center * angle.cos();
+        let y = distance_from_center * angle.sin();
+        let z = rng.gen_range(-5.0..5.0);
+        
+        let position = Position::new(x, y, z);
+        let planets = generate_random_planets(&mut rng, i, position);
+
+        catalog.undiscovered_systems.push(PotentialSystem {
+            name: format!("Sector-{:03}", i),
+            position,
+            planets,
+        });
+    }
+    commands.insert_resource(catalog);
+
     // 初期化完了イベントを送出
     events.send(SimulationEvent::WorldInitialized {
         max_ticks: config.max_ticks,
         seed: config.seed,
     });
+}
+
+/// ランダムな惑星を生成するヘルパー関数
+fn generate_random_planets(rng: &mut ChaCha20Rng, system_index: usize, _system_pos: Position) -> Vec<crate::components::space::PotentialPlanet> {
+    let num_planets = rng.gen_range(1..=5);
+    let mut planets = Vec::new();
+
+    for j in 0..num_planets {
+        let name = format!("Sector-{:03}-{:?}", system_index, ["I", "II", "III", "IV", "V"].get(j).unwrap_or(&"X"));
+        
+        // 恒星からの距離（0.5 ~ 10.0 AU 相当）- これ環境パラメータへの影響用
+        let orbit_dist = rng.gen_range(0.5f64..10.0f64);
+
+        // 環境の生成
+        let mass = rng.gen_range(0.1f64..3.0f64);
+        let gravity = mass.powf(0.8); // 簡易計算
+        let radius = mass.powf(0.33);
+
+        // 距離による温度決定 (簡易モデル)
+        // 1.0 AU (Earth) = 15.0 C と仮定, 距離の2乗に反比例してエネルギーが減る
+        let base_temp = 288.0 / orbit_dist.sqrt() - 273.15; 
+        let temperature = base_temp + rng.gen_range(-20.0f64..20.0f64);
+
+        // 大気と水
+        let (atmosphere, water_coverage) = if temperature > 100.0 || temperature < -100.0 {
+            (crate::components::environment::AtmosphereType::None, 0.0)
+        } else if gravity < 0.5 {
+             (crate::components::environment::AtmosphereType::Thin, rng.gen_range(0.0..0.1))
+        } else {
+             let roll = rng.gen_range(0.0..1.0);
+             if roll < 0.2 { (crate::components::environment::AtmosphereType::Toxic, rng.gen_range(0.0..0.5)) }
+             else if roll < 0.5 { (crate::components::environment::AtmosphereType::CarbonDioxide, rng.gen_range(0.0..0.3)) }
+             else if roll < 0.8 { (crate::components::environment::AtmosphereType::Thin, rng.gen_range(0.0..0.2)) }
+             else { (crate::components::environment::AtmosphereType::EarthLike, rng.gen_range(0.3..0.9)) }
+        };
+
+        let mut env = PlanetaryEnvironment {
+            mass,
+            gravity,
+            radius,
+            atmosphere,
+            atmospheric_pressure: if atmosphere == crate::components::environment::AtmosphereType::None { 0.0 } else { rng.gen_range(0.1..5.0) },
+            temperature,
+            water_coverage,
+            habitability: 0.0, // update_habitability で計算
+            population_capacity: 0.0,
+            radiation: if orbit_dist < 1.0 { rng.gen_range(0.1..0.5) } else { rng.gen_range(0.0..0.2) },
+            tectonic_activity: rng.gen_range(0.0..0.5),
+            meteorite_risk: rng.gen_range(0.0..0.1),
+            mineral_deposits: rng.gen_range(100.0..10000.0),
+            mineral_accessibility: rng.gen_range(0.1..1.0),
+            renewable_energy_potential: if orbit_dist < 2.0 { rng.gen_range(0.5..1.5) } else { rng.gen_range(0.1..0.5) },
+        };
+        env.update_habitability();
+
+        // 資源の分布 (環境に依存させるのが理想だが、一旦ランダム)
+        let resources = Resources {
+            food: rng.gen_range(0.0..1000.0), // 自然食品？
+            minerals: rng.gen_range(100.0..5000.0),
+            energy: rng.gen_range(0.0..1000.0),
+            manufactured_goods: 0.0,
+        };
+
+        let production = Production {
+            food_rate: if env.habitability > 0.5 { rng.gen_range(1.0..10.0) } else { 0.0 },
+            mineral_rate: rng.gen_range(5.0..20.0) * env.mineral_accessibility,
+            energy_rate: rng.gen_range(5.0..15.0),
+            manufacturing_rate: 0.0, // 無人なので工場なし
+        };
+
+        let depletable_resources = DepletableResources {
+            mineral_reserves: env.mineral_deposits * 1000.0,
+            initial_mineral_reserves: env.mineral_deposits * 1000.0,
+            fossil_fuel_reserves: if env.habitability > 0.3 { rng.gen_range(1000.0..50000.0) } else { 0.0 },
+            initial_fossil_fuel_reserves: if env.habitability > 0.3 { rng.gen_range(1000.0..50000.0) } else { 0.0 },
+            rare_earth_reserves: rng.gen_range(100.0..5000.0),
+            initial_rare_earth_reserves: rng.gen_range(100.0..5000.0),
+            mining_depth: 0.0,
+        };
+        
+        // 森林などは環境次第
+        let forest_coverage = if env.water_coverage > 0.1 && env.temperature > -10.0 && env.temperature < 40.0 {
+            rng.gen_range(0.1..0.8)
+        } else {
+            0.0
+        };
+
+        let renewable_resources = RenewableResources {
+            soil_fertility: if env.water_coverage > 0.0 { rng.gen_range(0.0..1.0) } else { 0.0 },
+            forest_coverage,
+            renewable_energy_output: env.renewable_energy_potential * 10.0,
+        };
+
+        let orbit = Orbit {
+            distance: orbit_dist as f32,
+            angle: rng.gen_range(0.0..2.0 * std::f32::consts::PI),
+            speed: 0.02 / orbit_dist.sqrt() as f32,
+        };
+
+        planets.push(crate::components::space::PotentialPlanet {
+            name,
+            environment: env,
+            resources,
+            production,
+            depletable_resources,
+            renewable_resources,
+            orbit,
+        });
+    }
+
+    planets
 }

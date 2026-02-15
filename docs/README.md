@@ -17,6 +17,8 @@
 
 - [**エージェント向け開発ガイド (AGENTS.md)**](../AGENTS.md) (ルートディレクトリ)
   - AI アシスタントがコードを修正する際の基本的なルールとアーキテクチャ原則。
+- [**フロントエンド検証ガイド (frontend_verification.md)**](frontend_verification.md)
+  - WebUI (React) とバックエンド (Rust) の連携確認手順。
 
 ## 履歴・アーカイブ
 

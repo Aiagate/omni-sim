@@ -79,10 +79,10 @@ pub struct TradeRoute {
     pub from_planet: Entity,
     /// 貿易先の惑星
     pub to_planet: Entity,
-    /// 距離（光年）— コスト計算に使用
-    pub distance: f64,
     /// 1 Tick あたりの輸送容量
     pub capacity: f64,
+    /// 貿易ルートの距離（キャッシュ）
+    pub distance: f64,
     /// アクティブかどうか
     pub active: bool,
 }
@@ -92,15 +92,15 @@ impl TradeRoute {
         Self {
             from_planet: from,
             to_planet: to,
-            distance,
             capacity,
+            distance,
             active: true,
         }
     }
 
     /// 距離に基づく輸送コスト（0.0〜1.0、1.0 に近いほど損失が大きい）
-    pub fn transport_cost(&self, balance: &crate::config::BalanceConfig) -> f64 {
-        (self.distance * balance.trade_cost_per_ly).min(balance.max_trade_cost)
+    pub fn transport_cost(distance: f64, balance: &crate::config::BalanceConfig) -> f64 {
+        (distance * balance.trade_cost_per_ly).min(balance.max_trade_cost)
     }
 }
 
@@ -138,4 +138,26 @@ impl Default for DepletableResources {
             mining_depth: 0.0,
         }
     }
+}
+
+/// 資源を輸送中の貨物船団
+#[derive(Component, Debug, Clone)]
+pub struct CargoFleet {
+    /// 出発星系（惑星）
+    pub origin: Entity,
+    pub origin_name: String,
+    /// 目的地（惑星）
+    pub destination: Entity,
+    /// 現在の目標座標（移動用）
+    pub target_pos: Vec3,
+    /// 輸送中の資源
+    pub resources: Vec<(ResourceType, f64)>,
+    /// 移動速度（光年/tick）
+    pub speed: f64,
+    /// 総移動距離（光年）
+    pub total_distance: f64,
+    /// これまでの移動距離
+    pub traveled_distance: f64,
+    /// 出発時刻 (Tick)
+    pub launch_tick: u64,
 }

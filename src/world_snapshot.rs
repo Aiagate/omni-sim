@@ -10,8 +10,16 @@ pub struct WorldSnapshot {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StarSystemSnapshot {
     pub name: String,
+    pub position: PositionSnapshot,
     pub planets: Vec<PlanetSnapshot>,
     pub nations: Vec<NationSnapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PositionSnapshot {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
