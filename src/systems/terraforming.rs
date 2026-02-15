@@ -3,7 +3,7 @@ use crate::components::common::{SimName, BelongsToNation};
 use crate::components::economy::Resources;
 use crate::components::environment::{PlanetaryEnvironment, AtmosphereType};
 use crate::components::terraforming::{TerraformingProject, TerraformingPhase};
-use crate::components::technology::{TechnologyState, TechField};
+use crate::components::technology::{TechnologyState, TechId};
 use crate::components::simulation_event::SimulationEvent;
 use crate::tick::CurrentTick;
 
@@ -33,7 +33,7 @@ pub fn terraforming_system(
             Err(_) => continue,
         };
 
-        let env_tech_level = tech.level(TechField::EnvironmentalTech);
+        let env_tech_level = tech.level(TechId::Environmental);
         if env_tech_level < _config.balance.terraforming_min_env_tech {
             // 環境技術レベル不足
             continue;
@@ -60,6 +60,14 @@ pub fn terraforming_system(
             res.manufactured_goods -= goods_cost;
             res.food -= food_cost;
             
+            let mut progress_per_tick = progress_per_tick;
+            
+            // Tier 3 Terraforming 技術による加速 (機能アンロックが必要)
+            let terraforming_level = tech.level(TechId::Terraforming);
+            if terraforming_level > 0 && tech.is_feature_unlocked(crate::components::technology::UnlockableFeature::Terraforming) {
+                progress_per_tick *= 1.0 + (terraforming_level as f64 * 1.0); // Lv1で倍速
+            }
+
             project.progress += progress_per_tick;
 
             // 進捗イベント（10% 刻みくらいで出すといいが、重要度 Low なので毎 Tick でも可）

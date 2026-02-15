@@ -65,6 +65,7 @@ cargo run -- --tui --max-ticks 100 --seed 123
 | `--tui` | インタラクティブな TUI モードで実行 | `false` |
 | `--max-ticks <N>` | シミュレーションの最大 Tick 数 | `50` |
 | `--seed <N>` | 乱数シード（再現性のため） | `42` |
+| `--tps <N>` | シミュレーションの最大 TPS (Ticks Per Second) | CLI: 無制限 / TUI: 60 |
 
 ---
 

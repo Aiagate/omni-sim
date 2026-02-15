@@ -25,6 +25,14 @@ impl DiplomaticRelation {
     }
 }
 
+/// 停戦協定（国家に付与）
+/// 指定されたTickまで、対象国への宣戦布告を禁止する
+#[derive(Component, Debug, Clone)]
+pub struct Truce {
+    pub with_nation: Entity,
+    pub expiration_tick: u64,
+}
+
 /// 戦争状態を表すコンポーネント（国家に付与）
 #[derive(Component, Debug, Clone)]
 pub struct AtWar {
@@ -40,6 +48,8 @@ pub struct AtWar {
     pub total_ships_lost: u32,
     /// 戦争による累積人口損害
     pub total_casualties: f64,
+    /// 現在戦闘中の星系リスト
+    pub battlefronts: Vec<Entity>,
 }
 
 impl AtWar {
@@ -51,6 +61,7 @@ impl AtWar {
             started_at,
             total_ships_lost: 0,
             total_casualties: 0.0,
+            battlefronts: Vec::new(),
         }
     }
 }

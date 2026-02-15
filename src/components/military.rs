@@ -25,3 +25,17 @@ impl MilitaryStrength {
         self.power = self.ships as f64 * 10.0;
     }
 }
+
+/// 艦隊マーカー（宇宙空間に存在する軍事力）
+#[derive(Component, Debug, Clone)]
+pub struct Fleet;
+
+/// 艦隊の戦術態勢
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FleetStance {
+    #[default]
+    Active,    // 通常戦闘（バランス）
+    Aggressive, // 攻撃優先（攻撃力+20%, 被弾率高）
+    Defensive,  // 防御優先（攻撃力-20%, 惑星の身代わりになる）
+    Passive,    // 戦闘回避（攻撃しない、被弾率極低）
+}

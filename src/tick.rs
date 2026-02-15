@@ -16,7 +16,7 @@ impl Plugin for TickPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CurrentTick>()
             .add_systems(
-                FixedUpdate,
+                Update,
                 tick_advance_system
                     .in_set(crate::plugins::simulation::SimulationSet)
                     .run_if(crate::plugins::tui_state::simulation_running),

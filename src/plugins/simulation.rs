@@ -21,7 +21,7 @@ impl Plugin for SimulationPlugin {
             .init_resource::<NationPlanetIndex>();
 
         app.add_systems(
-            FixedUpdate,
+            Update,
             (
                 // 1. 資源産出・人口成長 (独立して実行可能)
                 (
@@ -31,16 +31,19 @@ impl Plugin for SimulationPlugin {
                 // 2. 環境、貿易、軍事 (1 の結果に依存する場合があるため、1 の後に実行)
                 (
                     systems::economy::environment_dynamics_system,
-                    systems::trade::trade_system,
+                    systems::trade::trade_dispatch_system,
+                    systems::trade::cargo_movement_system,
                     systems::military::military_system,
                 ).after(systems::economy::resource_production_system),
                 // 3. 外交、戦争、研究、テラフォーミング (2 または 1 の後に実行)
                 (
                     systems::diplomacy::diplomacy_system.after(systems::military::military_system),
                     systems::war::war_trigger_system.after(systems::diplomacy::diplomacy_system),
+                    systems::national_ai::national_strategy_system.after(systems::war::war_trigger_system),
                     systems::war::combat_resolution_system.after(systems::war::war_trigger_system),
                     systems::research::research_system.after(systems::economy::resource_production_system),
                     systems::terraforming::terraforming_system.after(systems::research::research_system),
+                    systems::exploration::exploration_system.after(systems::research::research_system),
                 ),
                 // 4. イベント処理・インデックス更新 (最後に実行)
                 (

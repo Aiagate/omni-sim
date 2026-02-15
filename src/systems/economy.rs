@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use crate::components::common::{SimName, BelongsToNation};
 use crate::components::economy::{Production, Resources, DepletableResources};
 use crate::components::population::Population;
-use crate::components::technology::{TechnologyState, TechField};
+use crate::components::technology::{TechnologyState, TechId, UnlockableFeature};
 use crate::components::simulation_event::SimulationEvent;
 use crate::tick::CurrentTick;
 
@@ -34,20 +34,21 @@ pub fn resource_production_system(
         let labor_bonus = (pop.count.max(1.0).log10() / 6.0).clamp(0.5, 2.0);
 
         // 2. 技術ボーナス
-        let (ag_bonus, mn_bonus, en_bonus, mf_bonus, _env_tech_bonus, fusion_tech_bonus) = if let Some(t) = tech {
+        let (ag_bonus, mn_bonus, en_bonus, mf_bonus, _env_tech_bonus, fusion_tech_bonus, _nano_tech_bonus) = if let Some(t) = tech {
             (
-                t.bonus_multiplier(crate::components::technology::TechField::Agriculture, &config.balance),
-                t.bonus_multiplier(TechField::Mining, &config.balance),
-                t.bonus_multiplier(TechField::EnergyTech, &config.balance),
-                t.bonus_multiplier(TechField::Manufacturing, &config.balance),
-                t.bonus_multiplier(TechField::EnvironmentalTech, &config.balance),
-                t.bonus_multiplier(TechField::NuclearFusion, &config.balance),
+                t.bonus_multiplier(TechId::Agriculture, &config.balance),
+                t.bonus_multiplier(TechId::Mining, &config.balance),
+                t.bonus_multiplier(TechId::Energy, &config.balance),
+                t.bonus_multiplier(TechId::Manufacturing, &config.balance),
+                t.bonus_multiplier(TechId::Environmental, &config.balance),
+                t.bonus_multiplier(TechId::Fusion, &config.balance),
+                t.bonus_multiplier(TechId::Nanotech, &config.balance),
             )
         } else {
-            (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+            (1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
         };
 
-        let fusion_bonus = fusion_tech_bonus - 1.0;
+        let _fusion_bonus = fusion_tech_bonus - 1.0;
 
         // 3. 環境・資源補正
         // 重力補正: 1.3G超で工業効率低下
@@ -63,9 +64,25 @@ pub fn resource_production_system(
         // 農業
         res.food += prod.food_rate * labor_bonus * ag_bonus * fertility_ag_mod;
 
-        // 採掘 (埋蔵量制限)
-        let mut mineral_extracted = prod.mineral_rate * labor_bonus * mn_bonus * mining_depth_penalty;
-        mineral_extracted = mineral_extracted.min(deplet.mineral_reserves);
+        // 鉱物: 埋蔵量による減衰を DeepMining で緩和
+        let deep_mining_level = tech.map_or(0, |t| t.level(TechId::DeepMining));
+        let reserve_factor = (deplet.mineral_reserves / deplet.initial_mineral_reserves.max(1.0)).clamp(0.1, 1.0);
+        let effective_reserve_factor = if deep_mining_level > 0 {
+            // Level 1ごとにデバフを20%軽減（最大100%軽減 = 0.1 が 1.0 に近づく）
+            // ここは固定値で良いが、調整しやすくするため 0.2 としている
+            let cleanup = (deep_mining_level as f64 * 0.2).min(1.0);
+            reserve_factor + (1.0 - reserve_factor) * cleanup
+        } else {
+            reserve_factor
+        };
+        
+        let mut mineral_extracted = prod.mineral_rate * labor_bonus * mn_bonus * mining_depth_penalty * effective_reserve_factor;
+        
+        // シナジーボーナス: Mining (Nanotech + DeepMining)
+        if let Some(t) = tech {
+            mineral_extracted *= 1.0 + t.synergy_bonus(TechId::Mining);
+        }
+        mineral_extracted = mineral_extracted.min(deplet.mineral_reserves); // Still limited by actual reserves
         res.minerals += mineral_extracted;
         deplet.mineral_reserves -= mineral_extracted;
         
@@ -82,14 +99,24 @@ pub fn resource_production_system(
         // 貯蔵はせず、このターンの工業生産にボーナスを与える。
 
         // エネルギー (化石燃料消費)
-        // 技術レベルが上がると化石燃料依存度が下がる
-        let fusion_level = tech.map_or(0, |t| t.level(TechField::NuclearFusion));
-        let energy_tech_level = tech.map_or(0, |t| t.level(TechField::EnergyTech));
+        // 技術レベルが上がると化石燃料依存度と産出量が変わる
+        let fusion_level = tech.map_or(0, |t| t.level(TechId::Fusion));
+        let energy_tech_level = tech.map_or(0, |t| t.level(TechId::Energy));
+        let nano_tech_level = tech.map_or(0, |t| t.level(TechId::Nanotech));
+        let dyson_level = tech.map_or(0, |t| t.level(TechId::DysonSphere));
+        let mega_level = tech.map_or(0, |t| t.level(TechId::Megastructure));
 
         // 基礎依存度0.7. EnergyTech Lv1ごとに-0.05, Fusion Lv1ごとに-0.15
         let fossil_dependency = (0.7 - (energy_tech_level as f64 * 0.05) - (fusion_level as f64 * 0.15)).clamp(0.0, 1.0);
         
-        let mut energy_produced = prod.energy_rate * labor_bonus * en_bonus * (1.0 + fusion_bonus) * renew.renewable_energy_output;
+        // エネルギー (核融合ボーナス適用)
+        let mut energy_produced = prod.energy_rate * labor_bonus * en_bonus * (1.0 + fusion_level as f64 * config.balance.tech_bonus_per_level) * renew.renewable_energy_output;
+        
+        // ダイソンスフィア: 100倍の出力 (機能アンロックが必要)
+        if dyson_level > 0 && tech.map_or(false, |t| t.is_feature_unlocked(UnlockableFeature::DysonSphere)) {
+            energy_produced *= 100.0;
+        }
+
         let fossil_needed = (energy_produced * fossil_dependency * 0.1).min(deplet.fossil_fuel_reserves);
         
         if fossil_needed < (energy_produced * fossil_dependency * 0.1) && fossil_dependency > 0.0 {
@@ -101,9 +128,14 @@ pub fn resource_production_system(
         res.energy += energy_produced;
         deplet.fossil_fuel_reserves -= fossil_needed;
 
-        // 工業
-        let mut mf_produced = prod.manufacturing_rate * labor_bonus * mf_bonus * gravity_mf_penalty;
+        // 工業品 (ナノテクボーナス適用)
+        let mut mf_produced = prod.manufacturing_rate * labor_bonus * mf_bonus * gravity_mf_penalty * (1.0 + nano_tech_level as f64 * config.balance.nanotech_mf_bonus);
         
+        // メガストラクチャー: +50%/Lv
+        if mega_level > 0 {
+            mf_produced *= 1.0 + (mega_level as f64 * 0.5);
+        }
+
         // レアアースによる補正 (このターン採掘した分を使用)
         let re_needed = mf_produced * config.balance.rare_earth_consumption_mf_ratio;
         let re_efficiency = if re_needed > 0.0 { (re_extracted / re_needed).min(1.0) } else { 1.0 };
@@ -162,7 +194,7 @@ pub fn environment_dynamics_system(
 
         // 3. 汚染の自然浄化と技術的対策
         // 動的な浄化式: 基礎値 + (技術ボーナス) + (現在の汚染量による自然分解)
-        let env_tech_bonus = tech.map_or(0.0, |t| t.level(TechField::EnvironmentalTech) as f64 * config.balance.env_tech_cleanup_bonus_coeff);
+        let env_tech_bonus = tech.map_or(0.0, |t| t.level(TechId::Environmental) as f64 * config.balance.env_tech_cleanup_bonus_coeff);
         
         let base_cleanup = config.balance.base_cleanup_rate;
         let air_natural_cleanup = health.air_pollution * 0.002;
